@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SENTIRIC OBSERVER PORTAL</title>
+    <style>
+        body { background: #0a0a0a; color: #00ff9d; font-family: 'Courier New', Courier, monospace; margin: 0; padding: 20px; overflow: hidden; }
+        #console { background: #111; border: 1px solid #333; height: 85vh; padding: 10px; overflow-y: auto; display: flex; flex-direction: column; }
+        .log-line { border-left: 2px solid #00ff9d; padding-left: 10px; margin-bottom: 4px; font-size: 13px; line-height: 1.4; animation: fadeIn 0.2s ease-in; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        header { display: flex; justify-content: space-between; margin-bottom: 10px; border-bottom: 1px solid #333; padding-bottom: 10px; }
+        .status { color: #00ff9d; font-weight: bold; }
+        .tag-time { color: #888; }
+        .tag-svc { color: #00d4ff; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <header>
+        <div>📡 SENTIRIC FIELD MONITOR <small>v0.1.0</small></div>
+        <div id="status" class="status">CONNECTED</div>
+    </header>
+    <div id="console"></div>
+
+    <script>
+        const consoleEl = document.getElementById('console');
+        const statusEl = document.getElementById('status');
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+
+        ws.onmessage = (event) => {
+            const line = document.createElement('div');
+            line.className = 'log-line';
+            
+            // Log format: [HH:MM:SS] [Service] Message
+            const raw = event.data;
+            line.innerText = raw;
+            
+            consoleEl.appendChild(line);
+            
+            // Auto-scroll
+            consoleEl.scrollTop = consoleEl.scrollHeight;
+
+            // Keep max lines (Performance)
+            if (consoleEl.childElementCount > 1000) {
+                consoleEl.removeChild(consoleEl.firstChild);
+            }
+        };
+
+        ws.onclose = () => {
+            statusEl.innerText = 'DISCONNECTED';
+            statusEl.style.color = '#ff4444';
+        };
+    </script>
+</body>
+</html>
