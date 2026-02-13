@@ -1,16 +1,25 @@
 # --- Builder Stage ---
 FROM rust:1.93-slim-bookworm AS builder
 
-# Sistem bağımlılıkları
+# Gerekli sistem bağımlılıkları
+# protobuf-compiler: .proto dosyalarını derlemek (protoc) için eklendi.
 RUN apt-get update && apt-get install -y \
     pkg-config \
     libssl-dev \
+    protobuf-compiler \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+
+# Bağımlılıkları önceden çekmek (Layer Cache) için önce kopyalıyoruz
+COPY Cargo.toml Cargo.lock ./
+# Dummy bir main yaratarak bağımlılıkları build edelim (Opsiyonel ama hızlandırır)
+RUN mkdir src && echo "fn main() {}" > src/main.rs && cargo build --release && rm -rf src
+
+# Proje dosyalarını kopyala
 COPY . .
 
-# Derleme
+# Derleme (Build script artık protoc'u bulabilecek)
 RUN cargo build --release
 
 # --- Final Stage ---
@@ -24,10 +33,13 @@ WORKDIR /app
 
 # Binary kopyala
 COPY --from=builder /app/target/release/sentiric-observer .
+# UI dosyasını kopyala (Eğer binary içine gömmediyseniz - biz include_str! kullandık, o yüzden binary içindedir)
 
 # Standard Environment
 ENV RUST_LOG=info
 
-# Docker socket erişimi için root yetkisi gerekebilir (veya docker grubu)
-# Konteyner başlatılırken -u 0:0 veya volume izinleri ile yönetilir.
+# 11070: Web UI / WebSocket
+# 11071: gRPC Ingest
+EXPOSE 11070 11071
+
 ENTRYPOINT ["./sentiric-observer"]
