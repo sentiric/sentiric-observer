@@ -3,54 +3,51 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SENTIRIC OBSERVER PORTAL</title>
+    <title>SENTIRIC UNIFIED OBSERVER</title>
     <style>
-        body { background: #0a0a0a; color: #00ff9d; font-family: 'Courier New', Courier, monospace; margin: 0; padding: 20px; overflow: hidden; }
-        #console { background: #111; border: 1px solid #333; height: 85vh; padding: 10px; overflow-y: auto; display: flex; flex-direction: column; }
-        .log-line { border-left: 2px solid #00ff9d; padding-left: 10px; margin-bottom: 4px; font-size: 13px; line-height: 1.4; animation: fadeIn 0.2s ease-in; }
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        header { display: flex; justify-content: space-between; margin-bottom: 10px; border-bottom: 1px solid #333; padding-bottom: 10px; }
-        .status { color: #00ff9d; font-weight: bold; }
-        .tag-time { color: #888; }
-        .tag-svc { color: #00d4ff; font-weight: bold; }
+        body { background: #050505; color: #e0e0e0; font-family: 'Consolas', monospace; margin: 0; padding: 20px; }
+        #console { background: #000; border: 1px solid #222; height: 88vh; padding: 10px; overflow-y: auto; scroll-behavior: smooth; }
+        .line { margin-bottom: 3px; font-size: 12px; white-space: pre-wrap; border-bottom: 1px solid #111; padding-bottom: 2px; }
+        .node-local { color: #00ff9d; font-weight: bold; } /* Antalya */
+        .node-remote { color: #00d4ff; font-weight: bold; } /* GCP */
+        .svc { color: #ffae00; }
+        header { display: flex; justify-content: space-between; padding-bottom: 10px; font-size: 14px; border-bottom: 2px solid #00ff9d; margin-bottom: 10px; }
     </style>
 </head>
 <body>
     <header>
-        <div>📡 SENTIRIC FIELD MONITOR <small>v0.1.0</small></div>
-        <div id="status" class="status">CONNECTED</div>
+        <div>📡 SENTIRIC MESH OBSERVER <span id="node-info"></span></div>
+        <div id="status">CONNECTING...</div>
     </header>
     <div id="console"></div>
 
     <script>
         const consoleEl = document.getElementById('console');
         const statusEl = document.getElementById('status');
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+        const ws = new WebSocket(`${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`);
 
-        ws.onmessage = (event) => {
-            const line = document.createElement('div');
-            line.className = 'log-line';
+        ws.onmessage = (e) => {
+            const div = document.createElement('div');
+            div.className = 'line';
             
-            // Log format: [HH:MM:SS] [Service] Message
-            const raw = event.data;
-            line.innerText = raw;
+            // Log stilini zenginleştir
+            let raw = e.data;
+            if (raw.includes("🌐")) {
+                raw = raw.replace("🌐", "🌍"); // Uzak Node ikonu
+                div.style.color = "#00d4ff";
+            } else {
+                raw = raw.replace("🏠", "📍"); // Yerel Node ikonu
+            }
             
-            consoleEl.appendChild(line);
-            
-            // Auto-scroll
+            div.innerText = raw;
+            consoleEl.appendChild(div);
             consoleEl.scrollTop = consoleEl.scrollHeight;
 
-            // Keep max lines (Performance)
-            if (consoleEl.childElementCount > 1000) {
-                consoleEl.removeChild(consoleEl.firstChild);
-            }
+            if (consoleEl.childElementCount > 2000) consoleEl.removeChild(consoleEl.firstChild);
         };
 
-        ws.onclose = () => {
-            statusEl.innerText = 'DISCONNECTED';
-            statusEl.style.color = '#ff4444';
-        };
+        ws.onopen = () => { statusEl.innerText = '● LIVE'; statusEl.style.color = '#00ff9d'; };
+        ws.onclose = () => { statusEl.innerText = '○ OFFLINE'; statusEl.style.color = '#ff4444'; };
     </script>
 </body>
 </html>
