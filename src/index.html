@@ -5,49 +5,89 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SENTIRIC UNIFIED OBSERVER</title>
     <style>
-        body { background: #050505; color: #e0e0e0; font-family: 'Consolas', monospace; margin: 0; padding: 20px; }
-        #console { background: #000; border: 1px solid #222; height: 88vh; padding: 10px; overflow-y: auto; scroll-behavior: smooth; }
-        .line { margin-bottom: 3px; font-size: 12px; white-space: pre-wrap; border-bottom: 1px solid #111; padding-bottom: 2px; }
-        .node-local { color: #00ff9d; font-weight: bold; } /* Antalya */
-        .node-remote { color: #00d4ff; font-weight: bold; } /* GCP */
-        .svc { color: #ffae00; }
-        header { display: flex; justify-content: space-between; padding-bottom: 10px; font-size: 14px; border-bottom: 2px solid #00ff9d; margin-bottom: 10px; }
+        body { background: #050505; color: #e0e0e0; font-family: 'Consolas', 'Courier New', monospace; margin: 0; padding: 15px; overflow: hidden; }
+        header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 10px; border-bottom: 2px solid #00ff9d; margin-bottom: 10px; }
+        #stats-bar { display: flex; gap: 20px; background: #111; padding: 5px 15px; border-radius: 5px; font-size: 11px; border: 1px solid #333; }
+        .stat-label { color: #888; margin-right: 5px; }
+        .stat-value { color: #00ff9d; font-weight: bold; }
+        .stat-warn { color: #ffae00; }
+        #console { background: #000; border: 1px solid #222; height: 82vh; padding: 10px; overflow-y: auto; display: flex; flex-direction: column; }
+        .line { margin-bottom: 2px; font-size: 12px; white-space: pre-wrap; border-bottom: 1px solid #0f0f0f; padding: 2px 0; animation: fadeIn 0.1s ease-in; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .node-local { color: #00ff9d; }
+        .node-remote { color: #00d4ff; }
+        .sdk-log { color: #ff00ff; border-left: 2px solid #ff00ff; padding-left: 5px; }
+        #status-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 5px; background: #ff4444; }
     </style>
 </head>
 <body>
     <header>
-        <div>📡 SENTIRIC MESH OBSERVER <span id="node-info"></span></div>
-        <div id="status">CONNECTING...</div>
+        <div>📡 SENTIRIC MESH <span style="color:#00ff9d">OBSERVER</span></div>
+        <div id="stats-bar">
+            <div><span class="stat-label">JITTER:</span><span id="val-jitter" class="stat-value">-- ms</span></div>
+            <div><span class="stat-label">LOSS:</span><span id="val-loss" class="stat-value">0%</span></div>
+            <div><span class="stat-label">MOBILE RX:</span><span id="val-rx" class="stat-value">0</span></div>
+            <div><span class="stat-label">MOBILE TX:</span><span id="val-tx" class="stat-value">0</span></div>
+        </div>
+        <div><span id="status-dot"></span><span id="status-text">OFFLINE</span></div>
     </header>
     <div id="console"></div>
 
     <script>
         const consoleEl = document.getElementById('console');
-        const statusEl = document.getElementById('status');
+        const statusDot = document.getElementById('status-dot');
+        const statusText = document.getElementById('status-text');
+        
         const ws = new WebSocket(`${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`);
 
         ws.onmessage = (e) => {
+            const raw = e.data;
+            
+            // 1. Data Extraction (QoS from Media Service)
+            // Format: Loss: 0.00%, Jitter: 0.05ms
+            if (raw.includes("Loss:") && raw.includes("Jitter:")) {
+                const lossMatch = raw.match(/Loss: ([\d.]+)%/);
+                const jitterMatch = raw.match(/Jitter: ([\d.]+)ms/);
+                if (lossMatch) document.getElementById('val-loss').innerText = lossMatch[1] + '%';
+                if (jitterMatch) {
+                    const j = parseFloat(jitterMatch[1]);
+                    document.getElementById('val-jitter').innerText = j.toFixed(2) + ' ms';
+                    document.getElementById('val-jitter').className = j > 30 ? 'stat-value stat-warn' : 'stat-value';
+                }
+            }
+
+            // 2. Data Extraction (Stats from Mobile SDK)
+            // Format: RtpStats { rx_cnt: 120, tx_cnt: 150 }
+            if (raw.includes("RtpStats")) {
+                const rxMatch = raw.match(/rx_cnt: (\d+)/);
+                const txMatch = raw.match(/tx_cnt: (\d+)/);
+                if (rxMatch) document.getElementById('val-rx').innerText = rxMatch[1];
+                if (txMatch) document.getElementById('val-tx').innerText = txMatch[1];
+                return; // Stats paketlerini console'a basma, sadece widget'ı güncelle
+            }
+
+            // 3. UI Rendering
             const div = document.createElement('div');
             div.className = 'line';
             
-            // Log stilini zenginleştir
-            let raw = e.data;
-            if (raw.includes("🌐")) {
-                raw = raw.replace("🌐", "🌍"); // Uzak Node ikonu
+            if (raw.includes("MOBILE-SDK") || raw.contains("SDK-CLIENT")) {
+                div.classList.add("sdk-log");
+                div.innerText = "📱 " + raw;
+            } else if (raw.includes("🌐")) {
                 div.style.color = "#00d4ff";
+                div.innerText = "🌍 " + raw.replace("🌐", "");
             } else {
-                raw = raw.replace("🏠", "📍"); // Yerel Node ikonu
+                div.innerText = "📍 " + raw.replace("🏠", "");
             }
-            
-            div.innerText = raw;
+
             consoleEl.appendChild(div);
             consoleEl.scrollTop = consoleEl.scrollHeight;
 
-            if (consoleEl.childElementCount > 2000) consoleEl.removeChild(consoleEl.firstChild);
+            if (consoleEl.childElementCount > 1500) consoleEl.removeChild(consoleEl.firstChild);
         };
 
-        ws.onopen = () => { statusEl.innerText = '● LIVE'; statusEl.style.color = '#00ff9d'; };
-        ws.onclose = () => { statusEl.innerText = '○ OFFLINE'; statusEl.style.color = '#ff4444'; };
+        ws.onopen = () => { statusDot.style.background = '#00ff9d'; statusText.innerText = 'LIVE'; };
+        ws.onclose = () => { statusDot.style.background = '#ff4444'; statusText.innerText = 'OFFLINE'; };
     </script>
 </body>
 </html>
