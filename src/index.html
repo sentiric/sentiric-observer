@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SENTIRIC UNIFIED OBSERVER</title>
+    <!-- Favicon 404 hatasını engellemek için boş ikon -->
+    <link rel="icon" href="data:;base64,iVBORw0KGgo=">
     <style>
         body { background: #050505; color: #e0e0e0; font-family: 'Consolas', 'Courier New', monospace; margin: 0; padding: 15px; overflow: hidden; }
         header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 10px; border-bottom: 2px solid #00ff9d; margin-bottom: 10px; }
@@ -38,13 +40,15 @@
         const statusDot = document.getElementById('status-dot');
         const statusText = document.getElementById('status-text');
         
-        const ws = new WebSocket(`${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`);
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
 
         ws.onmessage = (e) => {
             const raw = e.data;
             
+            // [FIX]: contains() -> includes() olarak düzeltildi.
+            
             // 1. Data Extraction (QoS from Media Service)
-            // Format: Loss: 0.00%, Jitter: 0.05ms
             if (raw.includes("Loss:") && raw.includes("Jitter:")) {
                 const lossMatch = raw.match(/Loss: ([\d.]+)%/);
                 const jitterMatch = raw.match(/Jitter: ([\d.]+)ms/);
@@ -57,20 +61,19 @@
             }
 
             // 2. Data Extraction (Stats from Mobile SDK)
-            // Format: RtpStats { rx_cnt: 120, tx_cnt: 150 }
             if (raw.includes("RtpStats")) {
                 const rxMatch = raw.match(/rx_cnt: (\d+)/);
                 const txMatch = raw.match(/tx_cnt: (\d+)/);
                 if (rxMatch) document.getElementById('val-rx').innerText = rxMatch[1];
                 if (txMatch) document.getElementById('val-tx').innerText = txMatch[1];
-                return; // Stats paketlerini console'a basma, sadece widget'ı güncelle
+                return; 
             }
 
             // 3. UI Rendering
             const div = document.createElement('div');
             div.className = 'line';
             
-            if (raw.includes("MOBILE-SDK") || raw.contains("SDK-CLIENT")) {
+            if (raw.includes("MOBILE-SDK") || raw.includes("SDK-CLIENT")) {
                 div.classList.add("sdk-log");
                 div.innerText = "📱 " + raw;
             } else if (raw.includes("🌐")) {
@@ -81,8 +84,11 @@
             }
 
             consoleEl.appendChild(div);
+            
+            // Auto-scroll
             consoleEl.scrollTop = consoleEl.scrollHeight;
 
+            // Memory Protection
             if (consoleEl.childElementCount > 1500) consoleEl.removeChild(consoleEl.firstChild);
         };
 
