@@ -13,9 +13,10 @@ use futures_util::stream::StreamExt;
 use std::env;
 use std::sync::Arc;
 use tokio::sync::broadcast;
-use tracing::{info, warn};
+use tracing::{info, warn, error};
 use regex::Regex;
 
+// gRPC Generated Code
 pub mod observer_proto {
     tonic::include_proto!("sentiric.observer.v1");
 }
@@ -28,18 +29,19 @@ lazy_static::lazy_static! {
     static ref ANSI_REGEX: Regex = Regex::new(r"\x1b\[[0-9;]*[mK]").unwrap();
 }
 
+/// AppState holds the shared broadcast channel for all log sources.
 #[derive(Clone)]
 pub struct AppState {
     tx: Arc<broadcast::Sender<String>>,
-    node_name: String,
-    forwarder_client: Arc<tokio::sync::Mutex<Option<ObserverServiceClient<tonic::transport::Channel>>>>,
 }
 
 #[tonic::async_trait]
 impl ObserverService for AppState {
     async fn ingest_log(&self, request: Request<IngestLogRequest>) -> Result<Response<IngestLogResponse>, Status> {
         let req = request.into_inner();
-        let icon = if req.service_name.contains("MOBILE-SDK") { "📱" } else { "🌐" };
+        
+        // Determine source icon
+        let icon = if req.service_name.contains("MOBILE-SDK") { "📱" } else { "🌍" };
         
         let formatted = format!(
             "[{}] {} [{}] [{}] {}",
@@ -50,19 +52,8 @@ impl ObserverService for AppState {
             req.message.trim()
         );
         
-        let _ = self.tx.send(formatted.clone());
-
-        let mut guard = self.forwarder_client.lock().await;
-        if let Some(client) = guard.as_mut() {
-            let forward_req = IngestLogRequest {
-                service_name: "FORWARDER".into(),
-                message: formatted,
-                level: "FORWARD".into(),
-                trace_id: "".into(),
-                node_id: self.node_name.clone(),
-            };
-            let _ = client.ingest_log(forward_req).await;
-        }
+        // Broadcast to local listeners (Web UI and Forwarder)
+        let _ = self.tx.send(formatted);
 
         Ok(Response::new(IngestLogResponse { success: true }))
     }
@@ -70,82 +61,112 @@ impl ObserverService for AppState {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt().init();
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .init();
 
     let node_name = env::var("NODE_NAME").unwrap_or_else(|_| "unknown-node".into());
     let upstream_url = env::var("UPSTREAM_OBSERVER_URL").ok();
     let self_id = env::var("HOSTNAME").unwrap_or_else(|_| "unknown".into());
 
-    info!("👁️ Sentiric Observer v0.6.0 | Node: {} starting...", node_name);
+    info!("👁️ Sentiric Observer v0.7.0 starting on node: {}", node_name);
 
-    let docker = Arc::new(Docker::connect_with_local_defaults().expect("Docker fail"));
+    let docker = Arc::new(Docker::connect_with_local_defaults().expect("❌ Docker socket unreachable"));
     let (tx, _) = broadcast::channel::<String>(10000); 
     let tx = Arc::new(tx);
-    let forwarder_client = Arc::new(tokio::sync::Mutex::new(None));
+    
+    let app_state = AppState { tx: tx.clone() };
 
     // --- 1. UNIFIED FORWARDER TASK ---
     if let Some(url) = upstream_url.filter(|u| !u.is_empty()) {
-        let client_container = forwarder_client.clone();
+        let tx_forward = tx.clone();
+        let node_id_forward = node_name.clone();
         tokio::spawn(async move {
+            info!("🔗 Upstream Nexus defined. Starting forwarder to: {}", url);
+            let mut rx = tx_forward.subscribe();
             loop {
-                info!("🔗 Attempting to connect to Nexus: {}", url);
                 match ObserverServiceClient::connect(url.clone()).await {
-                    Ok(client) => {
-                        info!("✅ Connected to Nexus: {}", url);
-                        let mut guard = client_container.lock().await;
-                        *guard = Some(client);
-                        // Bağlantı kopana kadar bekle (Sonsuz)
-                        tokio::time::sleep(std::time::Duration::from_secs(u64::MAX)).await;
+                    Ok(mut client) => {
+                        info!("✅ Handshake successful with Nexus: {}", url);
+                        while let Ok(msg) = rx.recv().await {
+                            // Sadece yerel üretilen (📍) logları ilet, döngüyü engelle.
+                            if !msg.contains("📍") { continue; }
+                            
+                            let req = IngestLogRequest {
+                                service_name: "NODE-RELAY".into(),
+                                message: msg,
+                                level: "INFO".into(),
+                                trace_id: "".into(),
+                                node_id: node_id_forward.clone(),
+                            };
+                            if let Err(e) = client.ingest_log(req).await {
+                                warn!("❌ Nexus link broken: {}", e);
+                                break;
+                            }
+                        }
                     }
-                    Err(_) => {
-                        let mut guard = client_container.lock().await;
-                        *guard = None; // Bağlantı koptu, client'ı None yap
-                        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                    Err(e) => {
+                        warn!("⏳ Nexus unreachable ({}). Retrying in 10s...", e);
+                        tokio::time::sleep(std::time::Duration::from_secs(10)).await;
                     }
                 }
             }
         });
     }
 
-    // --- 2. DYNAMIC HARVESTER ---
-    let initial_containers = docker.list_containers(Some(ListContainersOptions::<String> { all: false, ..Default::default() })).await?;
+    // --- 2. DYNAMIC HARVESTER (Local Docker Logs) ---
+    let initial_containers = docker.list_containers(Some(ListContainersOptions::<String> { 
+        all: false, ..Default::default() 
+    })).await?;
+    
     for c in initial_containers {
         if let Some(id) = c.id {
             start_harvesting(docker.clone(), tx.clone(), id, self_id.clone(), node_name.clone());
         }
     }
-    
-    // Değişkenleri spawn'a taşımak için klonla
-    let docker_for_events = docker.clone();
-    let tx_for_events = tx.clone();
-    let self_id_for_events = self_id.clone();
-    let node_name_for_events = node_name.clone();
+
+    let docker_events = docker.clone();
+    let tx_events = tx.clone();
+    let self_id_events = self_id.clone();
+    let node_name_events = node_name.clone();
 
     tokio::spawn(async move {
-        let mut events = docker_for_events.events(Some(EventsOptions::<String> {
+        let mut events = docker_events.events(Some(EventsOptions::<String> {
             filters: [("event".into(), vec!["start".into()])].into(),
             ..Default::default()
         }));
-        info!("🔔 Listening for Docker lifecycle events...");
+        info!("🔔 Container lifecycle listener active.");
         while let Some(Ok(event)) = events.next().await {
             if let Some(actor) = event.actor {
-                start_harvesting(docker_for_events.clone(), tx_for_events.clone(), actor.id.unwrap_or_default(), self_id_for_events.clone(), node_name_for_events.clone());
+                start_harvesting(docker_events.clone(), tx_events.clone(), actor.id.unwrap_or_default(), self_id_events.clone(), node_name_events.clone());
             }
         }
     });
 
-    // --- 3. SERVERS ---
-    let app_state = AppState { tx: tx.clone(), node_name, forwarder_client };
-    let axum_app_state = app_state.clone();
+    // --- 3. SERVERS (Axum & gRPC) ---
+    
+    // Axum Spawn
+    let app_state_axum = app_state.clone();
     let axum_task = tokio::spawn(async move {
-        let app = Router::new().route("/", get(index_handler)).route("/ws", get(ws_handler)).with_state(axum_app_state);
+        let app = Router::new()
+            .route("/", get(index_handler))
+            .route("/ws", get(ws_handler))
+            .with_state(app_state_axum);
+        
         let listener = tokio::net::TcpListener::bind("0.0.0.0:11070").await.unwrap();
+        info!("🚀 Web Portal: http://0.0.0.0:11070");
         axum::serve(listener, app).await.unwrap();
     });
 
+    // gRPC Spawn
+    let app_state_grpc = app_state.clone();
     let grpc_task = tokio::spawn(async move {
         let addr = "0.0.0.0:11071".parse().unwrap();
-        tonic::transport::Server::builder().add_service(ObserverServiceServer::new(app_state)).serve(addr).await.unwrap();
+        info!("📥 gRPC Ingest: 0.0.0.0:11071");
+        tonic::transport::Server::builder()
+            .add_service(ObserverServiceServer::new(app_state_grpc))
+            .serve(addr)
+            .await.unwrap();
     });
 
     let _ = tokio::join!(axum_task, grpc_task);
@@ -165,10 +186,11 @@ fn start_harvesting(docker: Arc<Docker>, tx: Arc<broadcast::Sender<String>>, con
         
         let envs = inspect.config.and_then(|c| c.env).unwrap_or_default();
         if envs.iter().any(|e| e.contains("SERVICE_IGNORE=true")) || name.contains("observer") {
+            info!("🚫 Ignoring service: {}", name);
             return;
         }
 
-        info!("🚜 Harvesting logs for: {}", name);
+        info!("🚜 Harvesting started: {}", name);
 
         let mut stream = docker.logs(&container_id, Some(LogsOptions {
             follow: true, stdout: true, stderr: true, tail: "10", ..Default::default()
@@ -180,27 +202,38 @@ fn start_harvesting(docker: Arc<Docker>, tx: Arc<broadcast::Sender<String>>, con
                 LogOutput::StdErr { message } => String::from_utf8_lossy(&message).to_string(),
                 _ => continue,
             };
+
             let clean = ANSI_REGEX.replace_all(&log_text, "").to_string();
             if clean.trim().is_empty() { continue; }
 
-            let formatted = format!("📍 [{}] [{}] {}", 
+            let formatted = format!("[{}] 📍 [{}] [{}] {}", 
+                chrono::Utc::now().format("%H:%M:%S"),
                 node_name.to_uppercase(),
                 name.to_uppercase(), 
                 clean.trim()
             );
             let _ = tx.send(formatted);
         }
-        warn!("🛑 Harvesting stopped for: {}", name);
+        warn!("🛑 Harvesting stopped: {}", name);
     });
 }
 
-// UI Handlers
-async fn index_handler() -> Html<&'static str> { Html(include_str!("index.html")) }
-async fn ws_handler(ws: WebSocketUpgrade, axum::extract::State(state): axum::extract::State<AppState>) -> axum::response::Response {
+// --- Axum & WebSocket Handlers ---
+
+async fn index_handler() -> Html<&'static str> {
+    Html(include_str!("index.html"))
+}
+
+async fn ws_handler(
+    ws: WebSocketUpgrade, 
+    axum::extract::State(state): axum::extract::State<AppState>
+) -> axum::response::Response {
     ws.on_upgrade(|socket| handle_socket(socket, state.tx))
 }
+
 async fn handle_socket(mut socket: WebSocket, tx: Arc<broadcast::Sender<String>>) {
     let mut rx = tx.subscribe();
+    let mut heartbeat = tokio::time::interval(std::time::Duration::from_secs(30));
     loop {
         tokio::select! {
             msg_res = rx.recv() => {
@@ -208,6 +241,9 @@ async fn handle_socket(mut socket: WebSocket, tx: Arc<broadcast::Sender<String>>
                     Ok(msg) => if socket.send(WsMessage::Text(msg)).await.is_err() { break; },
                     Err(_) => break,
                 }
+            }
+            _ = heartbeat.tick() => {
+                if socket.send(WsMessage::Ping(vec![])).await.is_err() { break; }
             }
         }
     }
