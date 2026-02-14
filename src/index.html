@@ -299,10 +299,8 @@
                 if (l.node.includes("MOBILE")) src = "MOBILE";
                 
                 // Direction Heuristic
-                let target = "SBC";
-                if (src === "SBC") target = "PROXY";
-                if (src === "PROXY") target = "B2BUA";
-                if (src === "B2BUA") target = "MEDIA";
+                let target = src
+             
 
                 diag += `${src}->>+${target}: ${msg}\n`;
             });

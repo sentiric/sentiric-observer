@@ -13,7 +13,7 @@ use futures_util::stream::StreamExt;
 use std::env;
 use std::sync::Arc;
 use tokio::sync::broadcast;
-use tracing::{info, warn}; 
+use tracing::{info}; 
 use regex::Regex;
 use serde::{Serialize, Deserialize};
 
