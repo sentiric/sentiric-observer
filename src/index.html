@@ -3,80 +3,46 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SENTIRIC | COCKPIT</title>
+    <title>SENTIRIC | COCKPIT PRO v3.0</title>
     <link rel="icon" href="data:;base64,iVBORw0KGgo=">
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
     <style>
-        :root { --primary: #00ff9d; --bg: #0b0b0b; --panel: #141414; --text: #cccccc; --remote: #00d4ff; --mobile: #d900ff; --warn: #ffae00; --error: #ff4444; --sip: #00d4ff; --border: #333; }
+        :root { --primary: #00ff9d; --bg: #050505; --panel: #111; --text: #cccccc; --remote: #00d4ff; --mobile: #d900ff; --warn: #ffae00; --error: #ff4444; --sip: #00d4ff; --border: #333; }
         body { background: var(--bg); color: var(--text); font-family: 'JetBrains Mono', 'Consolas', monospace; margin: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
-        
-        /* Header */
         header { background: #000; padding: 0 20px; height: 50px; border-bottom: 1px solid var(--primary); display: flex; justify-content: space-between; align-items: center; box-shadow: 0 5px 15px rgba(0,0,0,0.5); }
         .brand { font-weight: 800; letter-spacing: 1.5px; color: #fff; display: flex; align-items: center; gap: 10px; }
         .brand span { color: var(--primary); }
-        
-        /* Toolbar */
         #toolbar { background: var(--panel); padding: 10px 20px; border-bottom: 1px solid var(--border); display: flex; gap: 15px; align-items: center; flex-wrap: wrap; }
         .filter-section { display: flex; gap: 5px; align-items: center; border-right: 1px solid var(--border); padding-right: 15px; }
         .filter-section:last-child { border: none; }
         .lbl { font-size: 9px; text-transform: uppercase; color: #666; font-weight: bold; margin-right: 5px; }
-        
-        /* Dynamic Buttons */
         .filter-btn { background: #222; border: 1px solid #444; color: #888; padding: 4px 8px; font-size: 11px; cursor: pointer; border-radius: 3px; transition: 0.2s; min-width: 60px; text-align: center; }
-        .filter-btn:hover { border-color: #666; color: #fff; }
         .filter-btn.active { border-color: var(--primary); color: var(--primary); background: rgba(0, 255, 157, 0.05); }
-        .filter-btn.node-remote.active { border-color: var(--remote); color: var(--remote); background: rgba(0, 212, 255, 0.05); }
-        .filter-btn.node-mobile.active { border-color: var(--mobile); color: var(--mobile); background: rgba(217, 0, 255, 0.05); }
-
-        /* Search & Actions */
-        input { background: #000; border: 1px solid #444; color: #fff; padding: 5px 10px; font-size: 12px; width: 200px; border-radius: 3px; outline: none; }
-        input:focus { border-color: var(--primary); }
-        .action-btn { background: var(--primary); color: #000; border: none; font-weight: bold; }
-        .action-btn:hover { opacity: 0.9; }
-        .pause-btn { background: var(--warn); color: #000; border: none; font-weight: bold; width: 80px;}
-
-        /* Console */
+        .action-btn { background: #333; color: var(--primary); border: 1px solid var(--primary); font-weight: bold; padding: 4px 12px; cursor: pointer; border-radius: 3px; font-size: 11px; }
+        .action-btn:hover { background: var(--primary); color: #000; }
+        input { background: #000; border: 1px solid #444; color: #fff; padding: 5px 10px; font-size: 12px; width: 180px; border-radius: 3px; outline: none; }
         #console { flex: 1; overflow-y: scroll; padding: 10px; background: #080808; font-size: 12px; line-height: 1.5; }
-        .line { margin-bottom: 2px; padding: 4px 8px; border-bottom: 1px solid #111; white-space: pre-wrap; word-break: break-all; display: flex; gap: 10px; }
-        .line:hover { background: #151515; }
-        
-        /* Log Parts */
+        .line { margin-bottom: 2px; padding: 4px 8px; border-bottom: 1px solid #111; white-space: pre-wrap; word-break: break-all; display: flex; gap: 10px; border-left: 3px solid transparent; }
         .ts { color: #555; min-width: 70px; }
-        .node { font-weight: bold; min-width: 120px; }
-        .svc { color: #aaa; min-width: 150px; }
-        .msg { flex: 1; color: #ccc; }
-        
-        /* Node Colors */
+        .node { font-weight: bold; min-width: 100px; }
+        .svc { color: #aaa; min-width: 120px; }
+        .msg { flex: 1; }
         .n-local { color: var(--primary); }
         .n-remote { color: var(--remote); }
         .n-mobile { color: var(--mobile); }
-
-        /* Semantic Highlighting */
-        .sip-method { color: #000; background: var(--sip); padding: 0 4px; border-radius: 2px; font-weight: bold; font-size: 11px; }
-        .sip-status { color: var(--primary); font-weight: bold; }
-        .err { color: var(--error); font-weight: bold; }
-        .warn { color: var(--warn); }
-        .call-id { color: var(--warn); text-decoration: underline; cursor: pointer; }
-
-        /* SIP Beautifier Box */
-        .sip-box { background: #111; border: 1px solid #333; border-left: 3px solid var(--sip); padding: 8px; margin-top: 4px; font-size: 11px; color: #aaa; display: block; width: 100%; border-radius: 0 4px 4px 0; }
-        .sip-header { color: #fff; font-weight: bold; }
-        .sdp-line { color: #888; }
-        .sdp-ip { color: var(--warn); font-weight: bold; }
-        
-        /* Scrollbar */
-        ::-webkit-scrollbar { width: 10px; }
-        ::-webkit-scrollbar-track { background: #000; }
-        ::-webkit-scrollbar-thumb { background: #333; border-radius: 5px; }
-        ::-webkit-scrollbar-thumb:hover { background: #555; }
+        .sip-box { background: #111; border: 1px solid #333; border-left: 3px solid var(--sip); padding: 8px; margin-top: 4px; border-radius: 4px; color: #888; }
+        .call-id { color: var(--warn); text-decoration: underline; cursor: pointer; font-weight: bold; }
+        #diagram-panel { flex: 1; background: #0e0e0e; padding: 20px; display: none; flex-direction: column; border-left: 1px solid #333; overflow: auto; }
     </style>
 </head>
 <body>
     <header>
-        <div class="brand">SENTIRIC <span>COCKPIT</span></div>
-        <div id="stats-container" style="display:flex; gap:20px; font-size:11px;">
-            <!-- Stats will be injected here -->
+        <div class="brand">SENTIRIC <span>COCKPIT PRO</span></div>
+        <div id="stats-bar" style="display:flex; gap:15px; font-size:11px;">
+            <div>JITTER: <span id="v-jitter" style="color:var(--primary)">--</span></div>
+            <div>LOSS: <span id="v-loss" style="color:var(--primary)">0%</span></div>
         </div>
-        <div id="ws-status" style="color:#666; font-size:10px;">CONNECTING...</div>
+        <div id="ws-status" style="font-size:10px;">CONNECTING...</div>
     </header>
 
     <div id="toolbar">
@@ -89,192 +55,162 @@
             <div id="filter-services" style="display:flex; gap:5px;"></div>
         </div>
         <div class="filter-section">
-            <span class="lbl">CONTROLS</span>
-            <button id="btn-pause" class="pause-btn" onclick="togglePause()">PAUSE</button>
-            <button onclick="clearLogs()">CLEAR</button>
-            <input type="text" id="search" placeholder="Filter Log / Call-ID" oninput="applyFilters()">
+            <span class="lbl">TOOLS</span>
+            <button class="action-btn" onclick="exportData()">AI EXPORT (JSON)</button>
+            <button class="filter-btn" id="btn-pause" onclick="togglePause()">PAUSE</button>
+            <input type="text" id="search" placeholder="Filter Call-ID..." oninput="refreshView()">
+            <button class="filter-btn" onclick="clearDb()">PURGE DB</button>
         </div>
     </div>
 
-    <div id="console"></div>
+    <div style="display:flex; flex:1; overflow:hidden;">
+        <div id="console"></div>
+        <div id="diagram-panel">
+            <div style="display:flex; justify-content:space-between; margin-bottom:15px;">
+                <b style="color:var(--primary)">SEQUENCE FLOW</b>
+                <button onclick="document.getElementById('diagram-panel').style.display='none'">CLOSE</button>
+            </div>
+            <div id="mermaid-chart"></div>
+        </div>
+    </div>
 
     <script>
         const consoleEl = document.getElementById('console');
         const wsStatus = document.getElementById('ws-status');
-        const filterNodesEl = document.getElementById('filter-nodes');
-        const filterServicesEl = document.getElementById('filter-services');
         
-        // State
-        let isPaused = false;
         let logs = [];
-        const maxLogs = 2000;
-        
-        // Dynamic Sets
+        let isPaused = false;
         let knownNodes = new Set();
         let knownServices = new Set();
         let activeNodes = new Set();
         let activeServices = new Set();
 
-        const ws = new WebSocket(`${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`);
+        // 1. IndexedDB Setup (Persistent History)
+        const dbName = "SentiricObserverDB";
+        let db;
+        const request = indexedDB.open(dbName, 1);
+        request.onupgradeneeded = (e) => {
+            db = e.target.result;
+            db.createObjectStore("logs", { autoIncrement: true });
+        };
+        request.onsuccess = (e) => {
+            db = e.target.result;
+            loadHistory();
+        };
 
-        ws.onopen = () => { wsStatus.innerText = '● SYSTEM LIVE'; wsStatus.style.color = '#00ff9d'; };
-        ws.onclose = () => { wsStatus.innerText = '● SYSTEM OFFLINE'; wsStatus.style.color = '#ff4444'; };
+        // 2. WebSocket Connection
+        const ws = new WebSocket(`${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`);
+        ws.onopen = () => { wsStatus.innerText = '● LIVE MESH'; wsStatus.style.color = '#00ff9d'; };
+        ws.onclose = () => { wsStatus.innerText = '● DISCONNECTED'; wsStatus.style.color = '#ff4444'; };
 
         ws.onmessage = (e) => {
             if (isPaused) return;
-
             try {
-                const data = JSON.parse(e.data);
-                handleLog(data);
-            } catch (err) {
-                // Legacy plain text handler (fallback)
-                console.warn("Non-JSON log received:", e.data);
-            }
+                const entry = JSON.parse(e.data);
+                processEntry(entry, true);
+            } catch (err) { console.error("Parse error", err); }
         };
 
-        function handleLog(entry) {
-            // 1. Dynamic Discovery
+        function processEntry(entry, saveToDb) {
+            // Discovery
             if (!knownNodes.has(entry.node)) {
-                knownNodes.add(entry.node);
-                activeNodes.add(entry.node);
-                addFilterButton(filterNodesEl, entry.node, 'node');
+                knownNodes.add(entry.node); activeNodes.add(entry.node);
+                createFilterBtn('filter-nodes', entry.node, 'node');
             }
             if (!knownServices.has(entry.service)) {
-                knownServices.add(entry.service);
-                activeServices.add(entry.service);
-                addFilterButton(filterServicesEl, entry.service, 'svc');
+                knownServices.add(entry.service); activeServices.add(entry.service);
+                createFilterBtn('filter-services', entry.service, 'svc');
             }
 
-            // 2. Storage
             logs.push(entry);
-            if (logs.length > maxLogs) logs.shift();
+            if (logs.length > 2000) logs.shift();
 
-            // 3. Render
-            renderEntry(entry);
-        }
-
-        function addFilterButton(container, name, type) {
-            const btn = document.createElement('button');
-            btn.innerText = name;
-            btn.className = 'filter-btn active';
-            
-            if (type === 'node') {
-                if (name.includes('GCP')) btn.classList.add('node-remote');
-                if (name.includes('MOBILE')) btn.classList.add('node-mobile');
+            if (saveToDb && db) {
+                const tx = db.transaction("logs", "readwrite");
+                tx.objectStore("logs").add(entry);
             }
 
-            btn.onclick = () => {
-                const set = type === 'node' ? activeNodes : activeServices;
-                if (set.has(name)) set.delete(name); else set.add(name);
-                btn.classList.toggle('active');
-                refreshView();
-            };
-            container.appendChild(btn);
+            renderLine(entry);
         }
 
-        function renderEntry(entry) {
-            // Filter Check
-            if (!activeNodes.has(entry.node)) return;
-            if (!activeServices.has(entry.service)) return;
+        function renderLine(entry) {
+            if (!activeNodes.has(entry.node) || !activeServices.has(entry.service)) return;
+            const search = document.getElementById('search').value.toLowerCase();
+            if (search && !JSON.stringify(entry).toLowerCase().includes(search)) return;
+
+            const div = document.createElement('div');
+            div.className = 'line';
             
-            const searchText = document.getElementById('search').value.toLowerCase();
-            if (searchText && !JSON.stringify(entry).toLowerCase().includes(searchText)) return;
+            let nClass = entry.node.includes('GCP') ? 'n-remote' : (entry.node.includes('SDK') ? 'n-mobile' : 'n-local');
+            div.style.borderLeftColor = `var(--${nClass.split('-')[1]})`;
 
-            // HTML Creation
-            const row = document.createElement('div');
-            row.className = 'line';
+            let msgHtml = entry.msg.replace(/</g, "&lt;").replace(/>/g, "&gt;")
+                .replace(/(uac-[a-f0-9]+)/g, '<span class="call-id" onclick="showDiagram(\'$1\')">$1</span>');
 
-            // Node Color
-            let nodeClass = 'n-local';
-            if (entry.node.includes('GCP')) nodeClass = 'n-remote';
-            if (entry.node.includes('MOBILE')) nodeClass = 'n-mobile';
-
-            // Message Parsing (SIP Beautifier)
-            let msgHtml = escapeHtml(entry.msg);
-            
-            // SIP Packet Detection
-            if (msgHtml.includes("SIP/2.0") || msgHtml.includes("INVITE")) {
-                msgHtml = beautifySip(msgHtml);
-            } else {
-                // Standard Highlighting
-                msgHtml = msgHtml
-                    .replace(/(uac-[a-f0-9]+)/g, '<span class="call-id" onclick="filterCall(\'$1\')">$1</span>')
-                    .replace(/ERROR/g, '<span class="err">ERROR</span>')
-                    .replace(/WARN/g, '<span class="warn">WARN</span>');
+            if (msgHtml.includes("INVITE") || msgHtml.includes("200 OK")) {
+                msgHtml = `<div class="sip-box">${msgHtml}</div>`;
             }
 
-            row.innerHTML = `
+            div.innerHTML = `
                 <div class="ts">${entry.ts.split('T')[1].split('.')[0]}</div>
-                <div class="node ${nodeClass}">${entry.node}</div>
+                <div class="node ${nClass}">${entry.node}</div>
                 <div class="svc">${entry.service}</div>
                 <div class="msg">${msgHtml}</div>
             `;
 
-            consoleEl.appendChild(row);
-            
-            // Auto Scroll
+            consoleEl.appendChild(div);
             if (!isPaused) consoleEl.scrollTop = consoleEl.scrollHeight;
-
-            // DOM Limit
-            if (consoleEl.childElementCount > 2000) consoleEl.removeChild(consoleEl.firstChild);
+            if (consoleEl.childElementCount > 1000) consoleEl.removeChild(consoleEl.firstChild);
         }
 
-        function beautifySip(raw) {
-            // Split headers and body
-            const parts = raw.split("\n\n");
-            let header = parts[0];
-            let body = parts.slice(1).join("\n\n");
-
-            // Header Highlighting
-            header = header
-                .replace(/(INVITE|ACK|BYE|CANCEL|OPTIONS|REGISTER)/g, '<span class="sip-method">$1</span>')
-                .replace(/(200 OK|100 Trying|180 Ringing)/g, '<span class="sip-status">$1</span>');
-
-            // Body Highlighting (SDP)
-            if (body) {
-                body = body
-                    .replace(/(c=IN IP4) ([\d.]+)/g, '$1 <span class="sdp-ip">$2</span>')
-                    .replace(/(m=audio) (\d+)/g, '$1 <span class="sdp-ip">$2</span>');
-                
-                return `${header}<div class="sip-box">${body}</div>`;
-            }
-            return header;
+        function createFilterBtn(containerId, name, type) {
+            const btn = document.createElement('button');
+            btn.innerText = name;
+            btn.className = 'filter-btn active';
+            btn.onclick = () => {
+                const set = type === 'node' ? activeNodes : activeServices;
+                set.has(name) ? set.delete(name) : set.add(name);
+                btn.classList.toggle('active');
+                refreshView();
+            };
+            document.getElementById(containerId).appendChild(btn);
         }
 
-        function refreshView() {
-            consoleEl.innerHTML = "";
-            logs.forEach(renderEntry);
+        function exportData() {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(logs, null, 2));
+            const downloadAnchorNode = document.createElement('a');
+            downloadAnchorNode.setAttribute("href", dataStr);
+            downloadAnchorNode.setAttribute("download", `sentiric_logs_${new Date().getTime()}.json`);
+            document.body.appendChild(downloadAnchorNode);
+            downloadAnchorNode.click();
+            downloadAnchorNode.remove();
         }
 
-        function togglePause() {
-            isPaused = !isPaused;
-            const btn = document.getElementById('btn-pause');
-            btn.innerText = isPaused ? "RESUME" : "PAUSE";
-            btn.style.background = isPaused ? "#00ff9d" : "#ffae00";
+        function loadHistory() {
+            const tx = db.transaction("logs", "readonly");
+            const store = tx.objectStore("logs");
+            store.openCursor(null, 'prev').onsuccess = (e) => {
+                const cursor = e.target.result;
+                if (cursor && logs.length < 500) {
+                    processEntry(cursor.value, false);
+                    cursor.continue();
+                }
+            };
         }
 
-        function clearLogs() {
-            logs = [];
-            consoleEl.innerHTML = "";
-        }
-
-        function filterCall(id) {
-            document.getElementById('search').value = id;
-            refreshView();
-        }
-
-        function applyFilters() {
-            refreshView();
-        }
-
-        function escapeHtml(text) {
-            if (!text) return "";
-            return text
-                .replace(/&/g, "&amp;")
-                .replace(/</g, "&lt;")
-                .replace(/>/g, "&gt;")
-                .replace(/"/g, "&quot;")
-                .replace(/'/g, "&#039;");
+        function clearDb() { if(confirm("Clear browser history?")) { db.transaction("logs", "readwrite").objectStore("logs").clear(); location.reload(); } }
+        function togglePause() { isPaused = !isPaused; document.getElementById('btn-pause').classList.toggle('active'); }
+        function refreshView() { consoleEl.innerHTML = ""; logs.forEach(renderLine); }
+        function showDiagram(id) { 
+            document.getElementById('diagram-panel').style.display = 'flex';
+            // Simple Diagram Gen
+            let diag = "sequenceDiagram\n";
+            logs.filter(l => JSON.stringify(l).includes(id)).forEach(l => {
+                if (l.msg.includes("INVITE")) diag += `Mobile->>SBC: INVITE\n`;
+                if (l.msg.includes("200 OK")) diag += `SBC-->>Mobile: 200 OK\n`;
+            });
+            document.getElementById('mermaid-chart').innerHTML = diag;
+            mermaid.init(undefined, document.getElementById('mermaid-chart'));
         }
     </script>
 </body>
