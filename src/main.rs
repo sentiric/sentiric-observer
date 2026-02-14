@@ -41,7 +41,8 @@ impl ObserverService for AppState {
         let req = request.into_inner();
         
         // Determine source icon
-        let icon = if req.service_name.contains("MOBILE-SDK") { "📱" } else { "🌍" };
+        // Eğer log bir başka node'dan geliyorsa 🌍, doğrudan mobil cihazdan geliyorsa 📱
+        let icon = if req.service_name.contains("MOBILE-SDK") || req.service_name.contains("SDK") { "📱" } else { "🌍" };
         
         let formatted = format!(
             "[{}] {} [{}] [{}] {}",
@@ -53,6 +54,7 @@ impl ObserverService for AppState {
         );
         
         // Broadcast to local listeners (Web UI and Forwarder)
+        // [CRITICAL]: Forwarder bunu rx.recv() ile yakalayacak.
         let _ = self.tx.send(formatted);
 
         Ok(Response::new(IngestLogResponse { success: true }))
@@ -69,7 +71,7 @@ async fn main() -> anyhow::Result<()> {
     let upstream_url = env::var("UPSTREAM_OBSERVER_URL").ok();
     let self_id = env::var("HOSTNAME").unwrap_or_else(|_| "unknown".into());
 
-    info!("👁️ Sentiric Observer v0.7.0 starting on node: {}", node_name);
+    info!("👁️ Sentiric Observer v0.8.0 starting on node: {}", node_name);
 
     let docker = Arc::new(Docker::connect_with_local_defaults().expect("❌ Docker socket unreachable"));
     let (tx, _) = broadcast::channel::<String>(10000); 
@@ -77,7 +79,7 @@ async fn main() -> anyhow::Result<()> {
     
     let app_state = AppState { tx: tx.clone() };
 
-    // --- 1. UNIFIED FORWARDER TASK ---
+    // --- 1. UNIFIED FORWARDER TASK (Fix for Mobile Logs) ---
     if let Some(url) = upstream_url.filter(|u| !u.is_empty()) {
         let tx_forward = tx.clone();
         let node_id_forward = node_name.clone();
@@ -89,11 +91,13 @@ async fn main() -> anyhow::Result<()> {
                     Ok(mut client) => {
                         info!("✅ Handshake successful with Nexus: {}", url);
                         while let Ok(msg) = rx.recv().await {
-                            // Sadece yerel üretilen (📍) logları ilet, döngüyü engelle.
-                            if !msg.contains("📍") { continue; }
+                            // [FIXED LOGIC]: 
+                            // 🌍 (Uzak Node'dan gelmiş) mesajları iletme (Döngü koruması).
+                            // 📍 (Lokal Docker) ve 📱 (Mobil SDK) mesajlarını İLET.
+                            if msg.contains("🌍") { continue; }
                             
                             let req = IngestLogRequest {
-                                service_name: "NODE-RELAY".into(),
+                                service_name: "RELAY".into(),
                                 message: msg,
                                 level: "INFO".into(),
                                 trace_id: "".into(),
@@ -114,7 +118,7 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
-    // --- 2. DYNAMIC HARVESTER (Local Docker Logs) ---
+    // --- 2. DYNAMIC HARVESTER ---
     let initial_containers = docker.list_containers(Some(ListContainersOptions::<String> { 
         all: false, ..Default::default() 
     })).await?;
@@ -145,7 +149,6 @@ async fn main() -> anyhow::Result<()> {
 
     // --- 3. SERVERS (Axum & gRPC) ---
     
-    // Axum Spawn
     let app_state_axum = app_state.clone();
     let axum_task = tokio::spawn(async move {
         let app = Router::new()
@@ -158,7 +161,6 @@ async fn main() -> anyhow::Result<()> {
         axum::serve(listener, app).await.unwrap();
     });
 
-    // gRPC Spawn
     let app_state_grpc = app_state.clone();
     let grpc_task = tokio::spawn(async move {
         let addr = "0.0.0.0:11071".parse().unwrap();
@@ -183,17 +185,15 @@ fn start_harvesting(docker: Arc<Docker>, tx: Arc<broadcast::Sender<String>>, con
         };
 
         let name = inspect.name.unwrap_or_else(|| "unknown".into()).trim_start_matches('/').to_string();
-        
         let envs = inspect.config.and_then(|c| c.env).unwrap_or_default();
         if envs.iter().any(|e| e.contains("SERVICE_IGNORE=true")) || name.contains("observer") {
-            info!("🚫 Ignoring service: {}", name);
             return;
         }
 
         info!("🚜 Harvesting started: {}", name);
 
         let mut stream = docker.logs(&container_id, Some(LogsOptions {
-            follow: true, stdout: true, stderr: true, tail: "10", ..Default::default()
+            follow: true, stdout: true, stderr: true, tail: "5", ..Default::default()
         }));
 
         while let Some(Ok(log)) = stream.next().await {
@@ -206,6 +206,7 @@ fn start_harvesting(docker: Arc<Docker>, tx: Arc<broadcast::Sender<String>>, con
             let clean = ANSI_REGEX.replace_all(&log_text, "").to_string();
             if clean.trim().is_empty() { continue; }
 
+            // Docker logları 📍 ikonu ile işaretlenir
             let formatted = format!("[{}] 📍 [{}] [{}] {}", 
                 chrono::Utc::now().format("%H:%M:%S"),
                 node_name.to_uppercase(),
@@ -214,7 +215,6 @@ fn start_harvesting(docker: Arc<Docker>, tx: Arc<broadcast::Sender<String>>, con
             );
             let _ = tx.send(formatted);
         }
-        warn!("🛑 Harvesting stopped: {}", name);
     });
 }
 
