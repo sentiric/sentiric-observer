@@ -3,97 +3,232 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SENTIRIC UNIFIED OBSERVER</title>
-    <!-- Favicon 404 hatasını engellemek için boş ikon -->
+    <title>SENTIRIC | INTELLIGENT OBSERVER</title>
     <link rel="icon" href="data:;base64,iVBORw0KGgo=">
+    <!-- Mermaid JS (CDN yerine embedded olması daha iyi ama şimdilik CDN) -->
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
     <style>
-        body { background: #050505; color: #e0e0e0; font-family: 'Consolas', 'Courier New', monospace; margin: 0; padding: 15px; overflow: hidden; }
-        header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 10px; border-bottom: 2px solid #00ff9d; margin-bottom: 10px; }
-        #stats-bar { display: flex; gap: 20px; background: #111; padding: 5px 15px; border-radius: 5px; font-size: 11px; border: 1px solid #333; }
-        .stat-label { color: #888; margin-right: 5px; }
-        .stat-value { color: #00ff9d; font-weight: bold; }
-        .stat-warn { color: #ffae00; }
-        #console { background: #000; border: 1px solid #222; height: 82vh; padding: 10px; overflow-y: auto; display: flex; flex-direction: column; }
-        .line { margin-bottom: 2px; font-size: 12px; white-space: pre-wrap; border-bottom: 1px solid #0f0f0f; padding: 2px 0; animation: fadeIn 0.1s ease-in; }
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        .node-local { color: #00ff9d; }
-        .node-remote { color: #00d4ff; }
-        .sdk-log { color: #ff00ff; border-left: 2px solid #ff00ff; padding-left: 5px; }
-        #status-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 5px; background: #ff4444; }
+        :root { --primary: #00ff9d; --bg: #050505; --panel: #111; --text: #e0e0e0; --remote: #00d4ff; --mobile: #ff00ff; }
+        body { background: var(--bg); color: var(--text); font-family: 'Consolas', monospace; margin: 0; padding: 0; height: 100vh; display: flex; flex-direction: column; }
+        
+        /* Layout */
+        #main-container { display: flex; flex: 1; overflow: hidden; }
+        #log-panel { flex: 2; border-right: 1px solid #333; display: flex; flex-direction: column; }
+        #diagram-panel { flex: 1; background: #0e0e0e; padding: 20px; display: none; flex-direction: column; }
+        
+        /* Header */
+        header { background: #000; padding: 10px 20px; border-bottom: 1px solid var(--primary); display: flex; justify-content: space-between; align-items: center; }
+        .brand { font-weight: bold; letter-spacing: 1px; color: var(--primary); }
+        
+        /* Controls */
+        #toolbar { background: var(--panel); padding: 8px 15px; border-bottom: 1px solid #333; display: flex; gap: 10px; align-items: center; }
+        button { background: #222; border: 1px solid #444; color: #aaa; padding: 4px 10px; cursor: pointer; border-radius: 3px; font-size: 11px; }
+        button:hover { background: #333; color: #fff; }
+        button.active { border-color: var(--primary); color: var(--primary); background: rgba(0, 255, 157, 0.1); }
+        input { background: #000; border: 1px solid #444; color: var(--primary); padding: 4px; font-size: 11px; width: 200px; }
+
+        /* Console */
+        #console { flex: 1; overflow-y: auto; padding: 10px; font-size: 11px; }
+        .line { margin-bottom: 2px; padding: 2px 5px; border-bottom: 1px solid #111; white-space: pre-wrap; cursor: pointer; }
+        .line:hover { background: #222; }
+        
+        /* Highlighting */
+        .hl-sip { color: #00d4ff; }
+        .hl-err { color: #ff4444; font-weight: bold; }
+        .hl-warn { color: #ffae00; }
+        
+        /* Tags */
+        .tag { padding: 1px 4px; border-radius: 2px; margin-right: 5px; font-weight: bold; }
+        .tag-loc { background: #004400; color: var(--primary); }
+        .tag-rem { background: #002244; color: var(--remote); }
+        .tag-mob { background: #440044; color: var(--mobile); }
+
+        /* Diagram */
+        #mermaid-chart { flex: 1; overflow: auto; }
+        .diagram-title { color: var(--primary); font-size: 14px; margin-bottom: 10px; border-bottom: 1px solid #333; padding-bottom: 5px; }
     </style>
 </head>
 <body>
     <header>
-        <div>📡 SENTIRIC MESH <span style="color:#00ff9d">OBSERVER</span></div>
-        <div id="stats-bar">
-            <div><span class="stat-label">JITTER:</span><span id="val-jitter" class="stat-value">-- ms</span></div>
-            <div><span class="stat-label">LOSS:</span><span id="val-loss" class="stat-value">0%</span></div>
-            <div><span class="stat-label">MOBILE RX:</span><span id="val-rx" class="stat-value">0</span></div>
-            <div><span class="stat-label">MOBILE TX:</span><span id="val-tx" class="stat-value">0</span></div>
+        <div class="brand">👁️ SENTIRIC OBSERVER <small>v2.0</small></div>
+        <div style="font-size:11px">
+            <span id="ws-status" style="color:#ff4444">● DISCONNECTED</span>
         </div>
-        <div><span id="status-dot"></span><span id="status-text">OFFLINE</span></div>
     </header>
-    <div id="console"></div>
+
+    <div id="main-container">
+        <!-- SOL PANEL: LOGLAR -->
+        <div id="log-panel">
+            <div id="toolbar">
+                <button onclick="toggleFilter('local')" id="btn-local" class="active">📍 LOCAL</button>
+                <button onclick="toggleFilter('remote')" id="btn-remote" class="active">🌍 REMOTE</button>
+                <button onclick="toggleFilter('mobile')" id="btn-mobile" class="active">📱 MOBILE</button>
+                <span style="border-right:1px solid #444; height:15px; margin:0 5px;"></span>
+                <input type="text" id="search" placeholder="Filter logs (Call-ID)..." oninput="applyFilters()">
+                <button onclick="clearLogs()">CLEAR</button>
+                <button onclick="toggleAutoScroll()" id="btn-scroll" class="active">SCROLL</button>
+                <button onclick="toggleDiagram()" id="btn-diagram" style="margin-left:auto">📊 DIAGRAM</button>
+            </div>
+            <div id="console"></div>
+        </div>
+
+        <!-- SAĞ PANEL: DİYAGRAM (Başlangıçta gizli) -->
+        <div id="diagram-panel">
+            <div class="diagram-title">CALL FLOW SEQUENCE</div>
+            <div id="mermaid-chart"></div>
+            <button onclick="generateDiagram()" style="margin-top:10px; width:100%">REFRESH DIAGRAM</button>
+        </div>
+    </div>
 
     <script>
+        mermaid.initialize({ startOnLoad: false, theme: 'dark' });
+
         const consoleEl = document.getElementById('console');
-        const statusDot = document.getElementById('status-dot');
-        const statusText = document.getElementById('status-text');
+        const statusEl = document.getElementById('ws-status');
+        const ws = new WebSocket(`${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`);
         
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+        let logs = []; // Logları hafızada tut (Diyagram için)
+        let config = { local: true, remote: true, mobile: true, scroll: true };
+        let currentFilter = "";
+
+        ws.onopen = () => { statusEl.innerText = '● LIVE'; statusEl.style.color = '#00ff9d'; };
+        ws.onclose = () => { statusEl.innerText = '● OFFLINE'; statusEl.style.color = '#ff4444'; };
 
         ws.onmessage = (e) => {
             const raw = e.data;
-            
-            // [FIX]: contains() -> includes() olarak düzeltildi.
-            
-            // 1. Data Extraction (QoS from Media Service)
-            if (raw.includes("Loss:") && raw.includes("Jitter:")) {
-                const lossMatch = raw.match(/Loss: ([\d.]+)%/);
-                const jitterMatch = raw.match(/Jitter: ([\d.]+)ms/);
-                if (lossMatch) document.getElementById('val-loss').innerText = lossMatch[1] + '%';
-                if (jitterMatch) {
-                    const j = parseFloat(jitterMatch[1]);
-                    document.getElementById('val-jitter').innerText = j.toFixed(2) + ' ms';
-                    document.getElementById('val-jitter').className = j > 30 ? 'stat-value stat-warn' : 'stat-value';
-                }
-            }
+            logs.push(raw); // Hafızaya ekle
+            if (logs.length > 5000) logs.shift(); // Hafıza koruması
 
-            // 2. Data Extraction (Stats from Mobile SDK)
-            if (raw.includes("RtpStats")) {
-                const rxMatch = raw.match(/rx_cnt: (\d+)/);
-                const txMatch = raw.match(/tx_cnt: (\d+)/);
-                if (rxMatch) document.getElementById('val-rx').innerText = rxMatch[1];
-                if (txMatch) document.getElementById('val-tx').innerText = txMatch[1];
-                return; 
-            }
+            renderLine(raw);
+        };
 
-            // 3. UI Rendering
+        function renderLine(raw) {
+            // Filtreleme
+            const isLocal = raw.includes("📍") || raw.includes("🏠");
+            const isRemote = raw.includes("🌍") || raw.includes("🌐");
+            const isMobile = raw.includes("📱");
+
+            if (isLocal && !config.local) return;
+            if (isRemote && !config.remote) return;
+            if (isMobile && !config.mobile) return;
+            if (currentFilter && !raw.toLowerCase().includes(currentFilter.toLowerCase())) return;
+
+            // DOM Oluşturma
             const div = document.createElement('div');
             div.className = 'line';
             
-            if (raw.includes("MOBILE-SDK") || raw.includes("SDK-CLIENT")) {
-                div.classList.add("sdk-log");
-                div.innerText = "📱 " + raw;
-            } else if (raw.includes("🌐")) {
-                div.style.color = "#00d4ff";
-                div.innerText = "🌍 " + raw.replace("🌐", "");
-            } else {
-                div.innerText = "📍 " + raw.replace("🏠", "");
+            // Formatlama ve Renklendirme
+            let html = raw.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+            
+            if (isLocal) html = html.replace("📍", '<span class="tag tag-loc">LOC</span>');
+            if (isRemote) html = html.replace("🌍", '<span class="tag tag-rem">REM</span>').replace("🌐", '<span class="tag tag-rem">REM</span>');
+            if (isMobile) html = html.replace("📱", '<span class="tag tag-mob">MOB</span>');
+
+            if (raw.includes("INVITE") || raw.includes("200 OK") || raw.includes("ACK")) div.classList.add("hl-sip");
+            if (raw.includes("ERROR") || raw.includes("Fail")) div.classList.add("hl-err");
+            if (raw.includes("WARN")) div.classList.add("hl-warn");
+
+            // JSON Parse (Eğer JSON ise pretty print yapabiliriz ama şimdilik tek satır kalsın)
+            
+            div.innerHTML = html;
+            consoleEl.appendChild(div);
+
+            if (config.scroll) consoleEl.scrollTop = consoleEl.scrollHeight;
+            if (consoleEl.childElementCount > 2000) consoleEl.removeChild(consoleEl.firstChild);
+        }
+
+        // --- DIAGRAM GENERATOR (THE BRAIN) ---
+        function generateDiagram() {
+            const callId = document.getElementById('search').value.trim();
+            if (!callId) {
+                document.getElementById('mermaid-chart').innerHTML = "<p style='color:#666'>Please enter a Call-ID in the filter box to generate a flow.</p>";
+                return;
             }
 
-            consoleEl.appendChild(div);
-            
-            // Auto-scroll
-            consoleEl.scrollTop = consoleEl.scrollHeight;
+            // Basit Regex ile loglardan akış çıkarma
+            // Örnek Log: ... [SBC-SERVICE] ... INVITE sip:...
+            let graphDefinition = 'sequenceDiagram\n';
+            let participants = new Set();
+            let hasData = false;
 
-            // Memory Protection
-            if (consoleEl.childElementCount > 1500) consoleEl.removeChild(consoleEl.firstChild);
-        };
+            // Filtrelenmiş logları tara
+            logs.filter(l => l.includes(callId)).forEach(line => {
+                let src = "Unknown";
+                let dst = "Unknown";
+                let msg = "Message";
 
-        ws.onopen = () => { statusDot.style.background = '#00ff9d'; statusText.innerText = 'LIVE'; };
-        ws.onclose = () => { statusDot.style.background = '#ff4444'; statusText.innerText = 'OFFLINE'; };
+                // Servis Tespiti (Basit Heuristic)
+                if (line.includes("MOBILE")) src = "Mobile";
+                else if (line.includes("SBC")) src = "SBC";
+                else if (line.includes("PROXY")) src = "Proxy";
+                else if (line.includes("B2BUA")) src = "B2BUA";
+                else if (line.includes("MEDIA")) src = "Media";
+                else return; // İlgisiz log
+
+                // Mesaj Tespiti
+                if (line.includes("INVITE")) msg = "INVITE";
+                else if (line.includes("200 OK")) msg = "200 OK";
+                else if (line.includes("ACK")) msg = "ACK";
+                else if (line.includes("BYE")) msg = "BYE";
+                else return; // Sadece SIP mesajlarını çiz
+
+                // Yön Tahmini (Zor kısım - şimdilik basit akış varsayımı)
+                // Gerçek çözümde log içinde "Sent to X" veya "Received from Y" olmalı.
+                // Şimdilik sadece olayları kronolojik olarak nota (Note) olarak ekleyelim.
+                // graphDefinition += `Note over ${src}: ${msg}\n`;
+                
+                // Veya daha iyisi: Kaynak -> Hedef tahmini (Log içeriğine göre)
+                if (line.includes("OUTGOING") || line.includes("SENDING")) {
+                    // Mobile -> SBC varsayımı
+                    if (src === "Mobile") { dst = "SBC"; }
+                    else if (src === "SBC") { dst = "Proxy"; }
+                    else if (src === "Proxy") { dst = "B2BUA"; }
+                    
+                    graphDefinition += `${src}->>${dst}: ${msg}\n`;
+                    participants.add(src); participants.add(dst);
+                    hasData = true;
+                } else if (line.includes("RECEIVED") || line.includes("INCOMING")) {
+                     // Ters yön
+                     graphDefinition += `Note right of ${src}: 📥 ${msg}\n`;
+                     participants.add(src);
+                     hasData = true;
+                }
+            });
+
+            if (!hasData) {
+                document.getElementById('mermaid-chart').innerHTML = "<p style='color:#warn'>No SIP flow data found for this ID.</p>";
+                return;
+            }
+
+            const element = document.getElementById('mermaid-chart');
+            element.removeAttribute('data-processed'); // Re-render için
+            element.innerHTML = graphDefinition;
+            mermaid.init(undefined, element);
+        }
+
+        // --- Controls ---
+        function toggleFilter(key) {
+            config[key] = !config[key];
+            document.getElementById('btn-' + key).classList.toggle('active');
+            applyFilters();
+        }
+        function toggleScroll() {
+            config.scroll = !config.scroll;
+            document.getElementById('btn-scroll').classList.toggle('active');
+        }
+        function toggleDiagram() {
+            const panel = document.getElementById('diagram-panel');
+            panel.style.display = panel.style.display === 'flex' ? 'none' : 'flex';
+        }
+        function clearLogs() {
+            consoleEl.innerHTML = "";
+            logs = [];
+        }
+        function applyFilters() {
+            currentFilter = document.getElementById('search').value;
+            consoleEl.innerHTML = ""; // Ekranı temizle
+            logs.forEach(renderLine); // Hafızadan yeniden çiz
+        }
     </script>
 </body>
 </html>
