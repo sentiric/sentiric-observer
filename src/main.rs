@@ -13,9 +13,15 @@ use futures_util::stream::StreamExt;
 use std::env;
 use std::sync::Arc;
 use tokio::sync::broadcast;
-use tracing::{info}; 
+// [FIX]: 'warn' kullanılmadığı için çıkarıldı
+use tracing::{info, error}; 
 use regex::Regex;
 use serde::{Serialize, Deserialize};
+
+// Network Sniffing
+// [FIX]: 'Device' kullanılmadığı için çıkarıldı
+use pcap::Capture;
+use etherparse::{SlicedPacket, TransportSlice};
 
 pub mod observer_proto {
     tonic::include_proto!("sentiric.observer.v1");
@@ -29,7 +35,6 @@ lazy_static::lazy_static! {
     static ref ANSI_REGEX: Regex = Regex::new(r"\x1b\[[0-9;]*[mK]").unwrap();
 }
 
-/// UI'a ve Node'lar arasına taşınacak standart veri paketi
 #[derive(Serialize, Deserialize, Clone, Debug)]
 struct LogEntry {
     ts: String,
@@ -37,7 +42,7 @@ struct LogEntry {
     service: String,
     level: String,
     msg: String,
-    source_type: String, // "docker", "grpc", "mobile"
+    source_type: String, // "docker", "grpc", "mobile", "network"
 }
 
 #[derive(Clone)]
@@ -76,8 +81,9 @@ async fn main() -> anyhow::Result<()> {
     let node_name = env::var("NODE_NAME").unwrap_or_else(|_| "unknown-node".into());
     let upstream_url = env::var("UPSTREAM_OBSERVER_URL").ok();
     let self_id = env::var("HOSTNAME").unwrap_or_else(|_| "unknown".into());
+    let enable_sniffer = env::var("ENABLE_NETWORK_SNIFFER").unwrap_or_else(|_| "false".to_string()) == "true";
 
-    info!("👁️ Sentiric Observer v1.0.0 | Node: {} starting...", node_name);
+    info!("👁️ Sentiric Observer v1.1.0 (SNI) | Node: {} starting...", node_name);
 
     let docker = Arc::new(Docker::connect_with_local_defaults().expect("Docker fail"));
     let (tx, _) = broadcast::channel::<String>(10000); 
@@ -85,7 +91,18 @@ async fn main() -> anyhow::Result<()> {
     
     let app_state = AppState { tx: tx.clone() };
 
-    // --- 1. UNIFIED FORWARDER TASK ---
+    // --- 1. NETWORK SNIFFER TASK (YENİ) ---
+    if enable_sniffer {
+        let tx_net = tx.clone();
+        let node_id_net = node_name.clone();
+        
+        // Blocking task olduğu için spawn_blocking veya ayrı thread kullanıyoruz
+        std::thread::spawn(move || {
+            start_network_sniffer(tx_net, node_id_net);
+        });
+    }
+
+    // --- 2. UNIFIED FORWARDER TASK ---
     if let Some(url) = upstream_url.filter(|u| !u.is_empty()) {
         let tx_clone = tx.clone();
         let node_id_clone = node_name.clone().to_uppercase();
@@ -98,7 +115,6 @@ async fn main() -> anyhow::Result<()> {
                         info!("✅ Connected to Nexus Cluster");
                         while let Ok(msg) = rx.recv().await {
                             if let Ok(entry) = serde_json::from_str::<LogEntry>(&msg) {
-                                // Sadece bu node'a ait yerel logları ilet (Döngü Koruması)
                                 if entry.node != node_id_clone { continue; }
                                 
                                 let req = IngestLogRequest {
@@ -108,7 +124,7 @@ async fn main() -> anyhow::Result<()> {
                                     trace_id: "".into(),
                                     node_id: entry.node,
                                 };
-                                if client. ingest_log(req).await.is_err() { break; }
+                                if client.ingest_log(req).await.is_err() { break; }
                             }
                         }
                     }
@@ -118,7 +134,7 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
-    // --- 2. DYNAMIC HARVESTER ---
+    // --- 3. DOCKER HARVESTER ---
     let initial_containers = docker.list_containers(Some(ListContainersOptions::<String> { all: false, ..Default::default() })).await?;
     for c in initial_containers {
         if let Some(id) = c.id {
@@ -142,7 +158,7 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
-    // --- 3. SERVERS ---
+    // --- 4. SERVERS ---
     let app_state_axum = app_state.clone();
     let axum_task = tokio::spawn(async move {
         let app = Router::new().route("/", get(index_handler)).route("/ws", get(ws_handler)).with_state(app_state_axum);
@@ -157,6 +173,73 @@ async fn main() -> anyhow::Result<()> {
 
     let _ = tokio::join!(axum_task, grpc_task);
     Ok(())
+}
+
+fn start_network_sniffer(tx: Arc<broadcast::Sender<String>>, node_name: String) {
+    info!("📡 Network Sniffer Initializing on ANY interface...");
+    
+    // [FIX]: 'mut' kaldırıldı çünkü cap değişkeni capture'a taşınırken değiştirilmiyor
+    let cap = match Capture::from_device("any") {
+        Ok(c) => c.promisc(true).snaplen(65535).timeout(1000).open(),
+        Err(e) => {
+            error!("Failed to open capture device: {}", e);
+            return;
+        }
+    };
+
+    let mut capture = match cap {
+        Ok(c) => c,
+        Err(e) => {
+            error!("Failed to activate capture: {}", e);
+            return;
+        }
+    };
+
+    // SIP Filtresi (Port 5060 veya Sentiric İç Portları)
+    if let Err(e) = capture.filter("udp and (port 5060 or portrange 13000-13100)", true) {
+        error!("BPF Filter Error: {}", e);
+        return;
+    }
+
+    info!("📡 Sniffer Active: Filtering SIP traffic...");
+
+    while let Ok(packet) = capture.next_packet() {
+        // Raw byte'ları parse et
+        if let Ok(sliced) = SlicedPacket::from_ethernet(&packet.data) {
+            if let Some(TransportSlice::Udp(udp)) = sliced.transport {
+                let payload = sliced.payload;
+                
+                if payload.len() < 4 { continue; }
+                
+                if let Ok(text) = std::str::from_utf8(payload) {
+                    if text.starts_with("SIP/2.0") || 
+                       text.starts_with("INVITE") || 
+                       text.starts_with("ACK") || 
+                       text.starts_with("BYE") || 
+                       text.starts_with("CANCEL") ||
+                       text.starts_with("REGISTER") ||
+                       text.starts_with("OPTIONS") {
+                        
+                        let src_port = udp.source_port();
+                        let dst_port = udp.destination_port();
+                        
+                        let entry = LogEntry {
+                            ts: chrono::Utc::now().to_rfc3339(),
+                            node: node_name.to_uppercase(),
+                            service: format!("SIP-NET [{}->{}]", src_port, dst_port),
+                            level: "TRACE".into(),
+                            msg: text.to_string(),
+                            source_type: "network".into(),
+                        };
+
+                        if let Ok(json_str) = serde_json::to_string(&entry) {
+                            let _ = tx.send(json_str);
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 fn start_harvesting(docker: Arc<Docker>, tx: Arc<broadcast::Sender<String>>, container_id: String, self_id: String, node_name: String) {
@@ -212,7 +295,7 @@ async fn handle_socket(mut socket: WebSocket, tx: Arc<broadcast::Sender<String>>
             msg_res = rx.recv() => {
                 match msg_res {
                     Ok(msg) => if socket.send(WsMessage::Text(msg)).await.is_err() { break; },
-                    Err(_) => continue, // Tüketici yavaşsa düşen paketleri yoksay
+                    Err(_) => continue, 
                 }
             },
             _ = heartbeat.tick() => { if socket.send(WsMessage::Ping(vec![])).await.is_err() { break; } }

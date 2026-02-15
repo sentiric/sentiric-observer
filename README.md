@@ -23,5 +23,12 @@ observer-service:
   volumes:
     - /var/run/docker.sock:/var/run/docker.sock:ro
 ```
+
+## Yerel geliştirme
+ÖN HAZIRLIK
+```bash
+sudo apt-get update && sudo apt-get install -y libpcap-dev
+```
+
 ---
 © 2026 Sentiric Team | GNU AGPL-3.0 License

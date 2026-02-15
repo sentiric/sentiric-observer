@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SENTIRIC | COCKPIT PRO v3.5</title>
+    <title>SENTIRIC | COCKPIT PRO v3.6 (SNI)</title>
     <link rel="icon" href="data:;base64,iVBORw0KGgo=">
     <!-- Mermaid JS Core -->
     <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
     <style>
         :root { 
             --primary: #00ff9d; --bg: #050505; --panel: #0f0f0f; --text: #d0d0d0; 
-            --remote: #00d4ff; --mobile: #d900ff; --warn: #ffae00; --error: #ff4444; 
+            --remote: #00d4ff; --mobile: #d900ff; --network: #d000ff; --warn: #ffae00; --error: #ff4444; 
             --sip: #00d4ff; --border: #222; 
         }
         
@@ -74,6 +74,9 @@
         .l-local { border-left-color: var(--primary); }
         .l-remote { border-left-color: var(--remote); }
         .l-mobile { border-left-color: var(--mobile); }
+        /* Network Sniffer Style */
+        .l-network { border-left-color: var(--network); background: rgba(208, 0, 255, 0.03); color: #eebbff; font-family: 'Courier New', monospace; }
+
         .sip-packet { background: rgba(0, 212, 255, 0.04); color: var(--remote); border-radius: 4px; padding: 10px; margin-top: 5px; border: 1px solid #00d4ff22; font-size: 11px; }
         .call-id { color: var(--warn); font-weight: bold; background: #2a1a00; padding: 1px 5px; border-radius: 3px; cursor: help; }
         
@@ -84,7 +87,7 @@
 </head>
 <body>
     <header>
-        <div class="brand">SENTIRIC <span>COCKPIT</span> <small style="font-size:9px; margin-left:10px; opacity:0.5;">v3.5 PRO</small></div>
+        <div class="brand">SENTIRIC <span>COCKPIT</span> <small style="font-size:9px; margin-left:10px; opacity:0.5;">v3.6 SNI</small></div>
         
         <div id="stats-bar">
             <div class="stat-box">JITTER<span id="v-jitter" class="stat-val">--</span></div>
@@ -113,7 +116,7 @@
             <input type="text" id="search" placeholder="Call-ID or keyword..." oninput="refreshView()">
         </div>
         <div class="filter-section">
-            <button class="export-btn" onclick="exportFilteredData()">EXPORT (FILTERED)</button>
+            <button class="export-btn" onclick="exportFilteredData()">EXPORT</button>
             <button class="f-btn" id="btn-pause" onclick="togglePause()">PAUSE</button>
             <button class="f-btn" onclick="clearDb()" style="color:var(--error)">PURGE</button>
         </div>
@@ -176,7 +179,7 @@
             try {
                 const entry = JSON.parse(e.data);
                 processEntry(entry, true);
-            } catch (err) { /* Silent ignore non-json */ }
+            } catch (err) { /* Silent ignore */ }
         };
 
         function processEntry(entry, saveToDb) {
@@ -212,7 +215,7 @@
         function renderLine(entry) {
             if (!isVisible(entry)) return;
 
-            // Handle Stats & Quality Reports
+            // Handle Stats
             if (entry.msg.includes("QoS Report")) {
                 const jMatch = entry.msg.match(/Jitter: ([\d.]+)ms/);
                 const lMatch = entry.msg.match(/Loss: ([\d.]+)%/);
@@ -224,16 +227,26 @@
                 const txM = entry.msg.match(/tx_cnt: (\d+)/);
                 if (rxM) document.getElementById('v-rx').innerText = rxM[1];
                 if (txM) document.getElementById('v-tx').innerText = txM[1];
-                return; // Don't print raw stats in log console
+                return; // Raw stats are noisy
             }
 
             const row = document.createElement('div');
             let nodeType = entry.node.includes('GCP') ? 'l-remote' : (entry.node.includes('MOBILE') ? 'l-mobile' : 'l-local');
+            
+            // [YENİ] Network Sniffer Ayrımı
+            if (entry.source_type === 'network') {
+                nodeType = 'l-network';
+                // Görsel ayrıştırma için servis adını güncelle
+                if (!entry.service.includes('📡')) {
+                   entry.service = "📡 " + entry.service;
+                }
+            }
+
             row.className = `line ${nodeType}`;
 
             let cleanMsg = entry.msg.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
             
-            // Interaction: Call-ID
+            // Interaction: Call-ID Link
             cleanMsg = cleanMsg.replace(/(uac-[a-f0-9]+)/g, '<span class="call-id" onclick="focusCall(\'$1\')">$1</span>');
 
             // SIP Highlighting
@@ -266,13 +279,12 @@
             document.getElementById(containerId).appendChild(btn);
         }
 
-        // [NEW]: Intelligent Filtered Export
         function exportFilteredData() {
             const filtered = logs.filter(isVisible);
             const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(filtered, null, 2));
             const downloadAnchor = document.createElement('a');
             downloadAnchor.setAttribute("href", dataStr);
-            downloadAnchor.setAttribute("download", `sentiric_filtered_export_${Date.now()}.json`);
+            downloadAnchor.setAttribute("download", `sentiric_export_${Date.now()}.json`);
             document.body.appendChild(downloadAnchor);
             downloadAnchor.click();
             downloadAnchor.remove();
@@ -281,7 +293,6 @@
         function focusCall(id) {
             document.getElementById('search').value = id;
             refreshView();
-            
             document.getElementById('diagram-panel').style.display = 'flex';
             generateFlow(id);
         }
@@ -289,18 +300,28 @@
         function generateFlow(callId) {
             let diag = "sequenceDiagram\n";
             diag += "autonumber\n";
-            let participants = new Set();
             
             logs.filter(l => JSON.stringify(l).includes(callId)).forEach(l => {
-                let msg = l.msg.includes("INVITE") ? "INVITE" : (l.msg.includes("200 OK") ? "200 OK" : (l.msg.includes("ACK") ? "ACK" : "BYE"));
-                if (!["INVITE", "200 OK", "ACK", "BYE"].some(v => l.msg.includes(v))) return;
+                let msg = "";
+                if (l.msg.includes("INVITE")) msg = "INVITE";
+                else if (l.msg.includes("200 OK")) msg = "200 OK";
+                else if (l.msg.includes("ACK")) msg = "ACK";
+                else if (l.msg.includes("BYE")) msg = "BYE";
+                
+                if (!msg) return;
 
-                let src = l.service.replace("-SERVICE", "");
+                let src = l.service.replace("-SERVICE", "").replace("📡 ", "");
                 if (l.node.includes("MOBILE")) src = "MOBILE";
                 
-                // Direction Heuristic
-                let target = src
-             
+                // Basit bir hedef tahmini (Gerçek bir parsing yapılabilir ama bu görsel)
+                // Genellikle: MOBILE -> SBC -> PROXY -> B2BUA
+                let target = "SYSTEM";
+                
+                if (l.source_type === 'network') {
+                    // Network paketleri için özel gösterim
+                    src = "NETWORK";
+                    target = "APP"; 
+                }
 
                 diag += `${src}->>+${target}: ${msg}\n`;
             });
