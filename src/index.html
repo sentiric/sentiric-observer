@@ -5,64 +5,37 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SENTIRIC | COCKPIT PRO v3.6 (SNI)</title>
     <link rel="icon" href="data:;base64,iVBORw0KGgo=">
-    <!-- Mermaid JS Core -->
     <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
     <style>
         :root { 
             --primary: #00ff9d; --bg: #050505; --panel: #0f0f0f; --text: #d0d0d0; 
-            --remote: #00d4ff; --mobile: #d900ff; --network: #d000ff; --warn: #ffae00; --error: #ff4444; 
+            --remote: #00d4ff; --mobile: #d900ff; --network: #ff00ff; --warn: #ffae00; --error: #ff4444; 
             --sip: #00d4ff; --border: #222; 
         }
         
-        body { background: var(--bg); color: var(--text); font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace; margin: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+        body { background: var(--bg); color: var(--text); font-family: 'JetBrains Mono', 'Fira Code', monospace; margin: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
         
-        /* High-End Header */
-        header { 
-            background: #000; padding: 0 20px; height: 55px; border-bottom: 1px solid var(--primary); 
-            display: flex; justify-content: space-between; align-items: center; 
-            box-shadow: 0 4px 20px rgba(0,255,157,0.1); z-index: 1000;
-        }
-        .brand { font-weight: 900; letter-spacing: 2px; color: #fff; display: flex; align-items: center; gap: 8px; }
+        header { background: #000; padding: 0 20px; height: 55px; border-bottom: 1px solid var(--primary); display: flex; justify-content: space-between; align-items: center; z-index: 1000; }
+        .brand { font-weight: 900; letter-spacing: 2px; color: #fff; }
         .brand span { color: var(--primary); }
 
         #stats-bar { display: flex; gap: 15px; font-size: 11px; }
         .stat-box { background: #111; border: 1px solid var(--border); padding: 4px 12px; border-radius: 4px; border-left: 3px solid var(--primary); }
         .stat-val { font-weight: bold; color: #fff; margin-left: 5px; }
 
-        /* Toolbar / Control Center */
-        #toolbar { background: var(--panel); padding: 10px 20px; border-bottom: 1px solid var(--border); display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
+        #toolbar { background: var(--panel); padding: 10px 20px; border-bottom: 1px solid var(--border); display: flex; gap: 20px; align-items: center; }
         .filter-section { display: flex; gap: 6px; align-items: center; border-right: 1px solid #333; padding-right: 15px; }
-        .filter-section:last-child { border: none; }
-        .lbl { font-size: 10px; text-transform: uppercase; color: #555; font-weight: 800; letter-spacing: 1px; }
+        .lbl { font-size: 10px; text-transform: uppercase; color: #555; font-weight: 800; }
 
-        /* Modern Filter Buttons */
-        .f-btn { 
-            background: #1a1a1a; border: 1px solid #333; color: #666; padding: 5px 12px; 
-            font-size: 11px; cursor: pointer; border-radius: 4px; transition: all 0.2s; font-weight: 600;
-        }
-        .f-btn:hover { border-color: #555; color: #aaa; }
+        .f-btn { background: #1a1a1a; border: 1px solid #333; color: #666; padding: 5px 12px; font-size: 11px; cursor: pointer; border-radius: 4px; transition: 0.2s; }
         .f-btn.active { border-color: var(--primary); color: var(--primary); background: rgba(0, 255, 157, 0.08); }
-        .f-btn.active.n-remote { border-color: var(--remote); color: var(--remote); background: rgba(0, 212, 255, 0.08); }
-        .f-btn.active.n-mobile { border-color: var(--mobile); color: var(--mobile); background: rgba(217, 0, 255, 0.08); }
+        .f-btn.active.n-network { border-color: var(--network); color: var(--network); background: rgba(255, 0, 255, 0.08); }
 
-        /* Special Action Buttons */
-        .export-btn { background: var(--primary); color: #000; border: none; font-weight: 900; padding: 6px 15px; border-radius: 4px; cursor: pointer; font-size: 11px; }
-        .export-btn:hover { transform: scale(1.05); }
-
-        /* Workspace */
         #workspace { display: flex; flex: 1; overflow: hidden; }
-        #console { flex: 2; overflow-y: auto; padding: 15px; background: #080808; position: relative; }
-        #diagram-panel { 
-            flex: 1.2; background: #0c0c0c; border-left: 1px solid var(--border); 
-            display: none; flex-direction: column; padding: 20px; overflow: auto; 
-        }
+        #console { flex: 2; overflow-y: auto; padding: 15px; background: #080808; }
+        #diagram-panel { flex: 1.2; background: #0c0c0c; border-left: 1px solid var(--border); display: none; flex-direction: column; padding: 20px; overflow: auto; }
 
-        /* Log Styling */
-        .line { 
-            margin-bottom: 4px; font-size: 12px; padding: 6px 10px; border-radius: 4px;
-            border-left: 3px solid transparent; background: rgba(255,255,255,0.01);
-            display: flex; gap: 12px; transition: 0.1s;
-        }
+        .line { margin-bottom: 4px; font-size: 12px; padding: 6px 10px; border-radius: 4px; border-left: 3px solid transparent; background: rgba(255,255,255,0.01); display: flex; gap: 12px; }
         .line:hover { background: rgba(255,255,255,0.04); cursor: pointer; }
         
         .ts { color: #444; min-width: 65px; }
@@ -70,35 +43,26 @@
         .svc { color: #777; min-width: 130px; font-size: 11px; }
         .msg { flex: 1; word-break: break-all; color: #bbb; }
 
-        /* Semantic Highlighting */
         .l-local { border-left-color: var(--primary); }
         .l-remote { border-left-color: var(--remote); }
         .l-mobile { border-left-color: var(--mobile); }
-        /* Network Sniffer Style */
-        .l-network { border-left-color: var(--network); background: rgba(208, 0, 255, 0.03); color: #eebbff; font-family: 'Courier New', monospace; }
+        .l-network { border-left-color: var(--network); background: rgba(255, 0, 255, 0.03); }
 
-        .sip-packet { background: rgba(0, 212, 255, 0.04); color: var(--remote); border-radius: 4px; padding: 10px; margin-top: 5px; border: 1px solid #00d4ff22; font-size: 11px; }
+        .sip-packet { background: rgba(0, 212, 255, 0.04); color: var(--remote); border-radius: 4px; padding: 10px; margin-top: 5px; border: 1px solid #00d4ff22; font-size: 11px; white-space: pre-wrap; }
+        .net-packet { background: rgba(255, 0, 255, 0.04); color: var(--network); border: 1px solid rgba(255, 0, 255, 0.2); }
         .call-id { color: var(--warn); font-weight: bold; background: #2a1a00; padding: 1px 5px; border-radius: 3px; cursor: help; }
         
-        #ws-status { font-size: 10px; font-weight: bold; }
         .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 5px; background: #ff4444; }
         .dot.online { background: var(--primary); box-shadow: 0 0 8px var(--primary); }
     </style>
 </head>
 <body>
     <header>
-        <div class="brand">SENTIRIC <span>COCKPIT</span> <small style="font-size:9px; margin-left:10px; opacity:0.5;">v3.6 SNI</small></div>
-        
+        <div class="brand">SENTIRIC <span>COCKPIT</span> <small>v3.6 SNI</small></div>
         <div id="stats-bar">
-            <div class="stat-box">JITTER<span id="v-jitter" class="stat-val">--</span></div>
-            <div class="stat-box">LOSS<span id="v-loss" class="stat-val">0%</span></div>
             <div class="stat-box">MB-RX<span id="v-rx" class="stat-val">0</span></div>
             <div class="stat-box">MB-TX<span id="v-tx" class="stat-val">0</span></div>
-        </div>
-
-        <div id="ws-status">
-            <span id="status-dot" class="dot"></span>
-            <span id="status-text">DISCONNECTED</span>
+            <div id="ws-status"><span id="status-dot" class="dot"></span> <span id="status-text">OFFLINE</span></div>
         </div>
     </header>
 
@@ -112,12 +76,7 @@
             <div id="filter-services" style="display:flex; gap:5px;"></div>
         </div>
         <div class="filter-section">
-            <span class="lbl">Search</span>
-            <input type="text" id="search" placeholder="Call-ID or keyword..." oninput="refreshView()">
-        </div>
-        <div class="filter-section">
-            <button class="export-btn" onclick="exportFilteredData()">EXPORT</button>
-            <button class="f-btn" id="btn-pause" onclick="togglePause()">PAUSE</button>
+            <input type="text" id="search" placeholder="Search Call-ID..." oninput="refreshView()">
             <button class="f-btn" onclick="clearDb()" style="color:var(--error)">PURGE</button>
         </div>
     </div>
@@ -125,8 +84,8 @@
     <div id="workspace">
         <div id="console"></div>
         <div id="diagram-panel">
-            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #333; padding-bottom:10px;">
-                <b style="color:var(--primary); font-size:12px;">SEQUENCE ANALYZER</b>
+            <div style="display:flex; justify-content:space-between; margin-bottom:15px;">
+                <b>SEQUENCE ANALYZER</b>
                 <button class="f-btn" onclick="document.getElementById('diagram-panel').style.display='none'">CLOSE</button>
             </div>
             <div id="mermaid-chart"></div>
@@ -134,25 +93,9 @@
     </div>
 
     <script>
-        // Mermaid Theme Configuration
-        mermaid.initialize({ 
-            startOnLoad: false, 
-            theme: 'base',
-            themeVariables: {
-                primaryColor: '#111',
-                primaryTextColor: '#fff',
-                primaryBorderColor: '#00ff9d',
-                lineColor: '#00ff9d',
-                secondaryColor: '#002244',
-                tertiaryColor: '#111',
-                noteBkgColor: '#222',
-                noteTextColor: '#00d4ff'
-            }
-        });
-
+        mermaid.initialize({ startOnLoad: false, theme: 'dark' });
         const consoleEl = document.getElementById('console');
         const statusDot = document.getElementById('status-dot');
-        const statusText = document.getElementById('status-text');
         
         let logs = [];
         let isPaused = false;
@@ -161,29 +104,17 @@
         let activeNodes = new Set();
         let activeServices = new Set();
 
-        // 1. IndexedDB Implementation
         const dbName = "SentiricCockpitDB";
         let db;
         const dbReq = indexedDB.open(dbName, 1);
         dbReq.onupgradeneeded = (e) => e.target.result.createObjectStore("logs", { autoIncrement: true });
         dbReq.onsuccess = (e) => { db = e.target.result; loadHistory(); };
 
-        // 2. Network - WebSocket
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
-        ws.onopen = () => { statusDot.className = 'dot online'; statusText.innerText = 'LIVE'; };
-        ws.onclose = () => { statusDot.className = 'dot'; statusText.innerText = 'OFFLINE'; };
-
-        ws.onmessage = (e) => {
-            if (isPaused) return;
-            try {
-                const entry = JSON.parse(e.data);
-                processEntry(entry, true);
-            } catch (err) { /* Silent ignore */ }
-        };
+        const ws = new WebSocket(`ws://${window.location.host}/ws`);
+        ws.onopen = () => { statusDot.className = 'dot online'; document.getElementById('status-text').innerText = 'LIVE'; };
+        ws.onmessage = (e) => { try { processEntry(JSON.parse(e.data), true); } catch(err){} };
 
         function processEntry(entry, saveToDb) {
-            // Discovery Logic
             if (!knownNodes.has(entry.node)) {
                 knownNodes.add(entry.node); activeNodes.add(entry.node);
                 createFilterBtn('filter-nodes', entry.node, 'node');
@@ -192,84 +123,52 @@
                 knownServices.add(entry.service); activeServices.add(entry.service);
                 createFilterBtn('filter-services', entry.service, 'svc');
             }
-
             logs.push(entry);
-            if (logs.length > 5000) logs.shift();
-
-            if (saveToDb && db) {
-                const tx = db.transaction("logs", "readwrite");
-                tx.objectStore("logs").add(entry);
-            }
-
+            if (logs.length > 3000) logs.shift();
+            if (saveToDb && db) db.transaction("logs", "readwrite").objectStore("logs").add(entry);
             renderLine(entry);
         }
 
-        function isVisible(entry) {
-            if (!activeNodes.has(entry.node)) return false;
-            if (!activeServices.has(entry.service)) return false;
-            const search = document.getElementById('search').value.toLowerCase();
-            if (search && !JSON.stringify(entry).toLowerCase().includes(search)) return false;
-            return true;
-        }
-
         function renderLine(entry) {
-            if (!isVisible(entry)) return;
+            if (!activeNodes.has(entry.node) || !activeServices.has(entry.service)) return;
+            const search = document.getElementById('search').value.toLowerCase();
+            if (search && !JSON.stringify(entry).toLowerCase().includes(search)) return;
 
-            // Handle Stats
-            if (entry.msg.includes("QoS Report")) {
-                const jMatch = entry.msg.match(/Jitter: ([\d.]+)ms/);
-                const lMatch = entry.msg.match(/Loss: ([\d.]+)%/);
-                if (jMatch) document.getElementById('v-jitter').innerText = jMatch[1] + ' ms';
-                if (lMatch) document.getElementById('v-loss').innerText = lMatch[1] + '%';
-            }
             if (entry.msg.includes("RtpStats")) {
-                const rxM = entry.msg.match(/rx_cnt: (\d+)/);
-                const txM = entry.msg.match(/tx_cnt: (\d+)/);
-                if (rxM) document.getElementById('v-rx').innerText = rxM[1];
-                if (txM) document.getElementById('v-tx').innerText = txM[1];
-                return; // Raw stats are noisy
+                const rx = entry.msg.match(/rx_cnt: (\d+)/)?.[1] || "0";
+                const tx = entry.msg.match(/tx_cnt: (\d+)/)?.[1] || "0";
+                document.getElementById('v-rx').innerText = rx;
+                document.getElementById('v-tx').innerText = tx;
+                return;
             }
 
             const row = document.createElement('div');
-            let nodeType = entry.node.includes('GCP') ? 'l-remote' : (entry.node.includes('MOBILE') ? 'l-mobile' : 'l-local');
-            
-            // [YENİ] Network Sniffer Ayrımı
-            if (entry.source_type === 'network') {
-                nodeType = 'l-network';
-                // Görsel ayrıştırma için servis adını güncelle
-                if (!entry.service.includes('📡')) {
-                   entry.service = "📡 " + entry.service;
-                }
-            }
+            let typeClass = entry.source_type === 'network' ? 'l-network' : (entry.node.includes('GCP') ? 'l-remote' : 'l-local');
+            row.className = `line ${typeClass}`;
 
-            row.className = `line ${nodeType}`;
+            let displayMsg = entry.msg.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+            displayMsg = displayMsg.replace(/(uac-[a-f0-9]+)/g, '<span class="call-id" onclick="focusCall(\'$1\')">$1</span>');
 
-            let cleanMsg = entry.msg.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-            
-            // Interaction: Call-ID Link
-            cleanMsg = cleanMsg.replace(/(uac-[a-f0-9]+)/g, '<span class="call-id" onclick="focusCall(\'$1\')">$1</span>');
-
-            // SIP Highlighting
-            if (cleanMsg.includes("INVITE") || cleanMsg.includes("200 OK") || cleanMsg.includes("ACK")) {
-                cleanMsg = `<div class="sip-packet">${cleanMsg}</div>`;
+            if (entry.source_type === 'network' || displayMsg.includes("INVITE") || displayMsg.includes("200 OK")) {
+                let subClass = entry.source_type === 'network' ? 'net-packet' : '';
+                displayMsg = `<div class="sip-packet ${subClass}">${displayMsg}</div>`;
             }
 
             row.innerHTML = `
                 <div class="ts">${entry.ts.split('T')[1].split('.')[0]}</div>
                 <div class="node">${entry.node}</div>
-                <div class="svc">${entry.service}</div>
-                <div class="msg">${cleanMsg}</div>
+                <div class="svc">${entry.source_type === 'network' ? '📡 SNIFFER' : entry.service}</div>
+                <div class="msg">${displayMsg}</div>
             `;
-
             consoleEl.appendChild(row);
-            if (!isPaused) consoleEl.scrollTop = consoleEl.scrollHeight;
-            if (consoleEl.childElementCount > 1000) consoleEl.removeChild(consoleEl.firstChild);
+            consoleEl.scrollTop = consoleEl.scrollHeight;
+            if (consoleEl.childElementCount > 500) consoleEl.removeChild(consoleEl.firstChild);
         }
 
         function createFilterBtn(containerId, name, type) {
             const btn = document.createElement('button');
             btn.innerText = name;
-            btn.className = `f-btn active ${name.includes('GCP') ? 'n-remote' : (name.includes('MOBILE') ? 'n-mobile' : '')}`;
+            btn.className = `f-btn active ${name === 'NETWORK-SNIFFER' ? 'n-network' : ''}`;
             btn.onclick = () => {
                 const set = type === 'node' ? activeNodes : activeServices;
                 set.has(name) ? set.delete(name) : set.add(name);
@@ -277,17 +176,6 @@
                 refreshView();
             };
             document.getElementById(containerId).appendChild(btn);
-        }
-
-        function exportFilteredData() {
-            const filtered = logs.filter(isVisible);
-            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(filtered, null, 2));
-            const downloadAnchor = document.createElement('a');
-            downloadAnchor.setAttribute("href", dataStr);
-            downloadAnchor.setAttribute("download", `sentiric_export_${Date.now()}.json`);
-            document.body.appendChild(downloadAnchor);
-            downloadAnchor.click();
-            downloadAnchor.remove();
         }
 
         function focusCall(id) {
@@ -298,34 +186,15 @@
         }
 
         function generateFlow(callId) {
-            let diag = "sequenceDiagram\n";
-            diag += "autonumber\n";
-            
+            let diag = "sequenceDiagram\nautonumber\n";
             logs.filter(l => JSON.stringify(l).includes(callId)).forEach(l => {
-                let msg = "";
-                if (l.msg.includes("INVITE")) msg = "INVITE";
-                else if (l.msg.includes("200 OK")) msg = "200 OK";
-                else if (l.msg.includes("ACK")) msg = "ACK";
-                else if (l.msg.includes("BYE")) msg = "BYE";
+                let msg = l.msg.includes("INVITE") ? "INVITE" : (l.msg.includes("200 OK") ? "200 OK" : (l.msg.includes("ACK") ? "ACK" : "BYE"));
+                if (!["INVITE", "200 OK", "ACK", "BYE"].some(v => l.msg.includes(v))) return;
                 
-                if (!msg) return;
-
-                let src = l.service.replace("-SERVICE", "").replace("📡 ", "");
-                if (l.node.includes("MOBILE")) src = "MOBILE";
-                
-                // Basit bir hedef tahmini (Gerçek bir parsing yapılabilir ama bu görsel)
-                // Genellikle: MOBILE -> SBC -> PROXY -> B2BUA
-                let target = "SYSTEM";
-                
-                if (l.source_type === 'network') {
-                    // Network paketleri için özel gösterim
-                    src = "NETWORK";
-                    target = "APP"; 
-                }
-
-                diag += `${src}->>+${target}: ${msg}\n`;
+                let src = l.source_type === 'network' ? "NETWORK" : l.service.replace("-SERVICE", "");
+                let dst = l.source_type === 'network' ? "INTERFACE" : "SYSTEM";
+                diag += `${src}->>+${dst}: ${msg}\n`;
             });
-
             const el = document.getElementById('mermaid-chart');
             el.removeAttribute('data-processed');
             el.innerHTML = diag;
@@ -333,19 +202,14 @@
         }
 
         function loadHistory() {
-            const tx = db.transaction("logs", "readonly");
-            const store = tx.objectStore("logs");
+            const store = db.transaction("logs", "readonly").objectStore("logs");
             store.openCursor(null, 'prev').onsuccess = (e) => {
                 const cursor = e.target.result;
-                if (cursor && logs.length < 500) {
-                    processEntry(cursor.value, false);
-                    cursor.continue();
-                }
+                if (cursor && logs.length < 1000) { processEntry(cursor.value, false); cursor.continue(); }
             };
         }
 
-        function togglePause() { isPaused = !isPaused; document.getElementById('btn-pause').classList.toggle('active'); }
-        function clearDb() { if(confirm("Purge local history?")) { db.transaction("logs", "readwrite").objectStore("logs").clear(); location.reload(); } }
+        function clearDb() { if(confirm("Clear local DB?")) { db.transaction("logs", "readwrite").objectStore("logs").clear(); location.reload(); } }
         function refreshView() { consoleEl.innerHTML = ""; logs.forEach(renderLine); }
     </script>
 </body>

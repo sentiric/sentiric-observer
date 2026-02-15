@@ -13,15 +13,10 @@ use futures_util::stream::StreamExt;
 use std::env;
 use std::sync::Arc;
 use tokio::sync::broadcast;
-// [FIX]: 'warn' kullanılmadığı için çıkarıldı
-use tracing::{info, error}; 
+use tracing::{info, error, warn}; 
 use regex::Regex;
 use serde::{Serialize, Deserialize};
-
-// Network Sniffing
-// [FIX]: 'Device' kullanılmadığı için çıkarıldı
 use pcap::Capture;
-use etherparse::{SlicedPacket, TransportSlice};
 
 pub mod observer_proto {
     tonic::include_proto!("sentiric.observer.v1");
@@ -42,7 +37,7 @@ struct LogEntry {
     service: String,
     level: String,
     msg: String,
-    source_type: String, // "docker", "grpc", "mobile", "network"
+    source_type: String, 
 }
 
 #[derive(Clone)]
@@ -54,7 +49,6 @@ pub struct AppState {
 impl ObserverService for AppState {
     async fn ingest_log(&self, request: Request<IngestLogRequest>) -> Result<Response<IngestLogResponse>, Status> {
         let req = request.into_inner();
-        
         let entry = LogEntry {
             ts: chrono::Utc::now().to_rfc3339(),
             node: req.node_id.to_uppercase(),
@@ -63,11 +57,7 @@ impl ObserverService for AppState {
             msg: req.message,
             source_type: if req.service_name.contains("MOBILE") { "mobile".into() } else { "grpc".into() },
         };
-
-        if let Ok(json_str) = serde_json::to_string(&entry) {
-            let _ = self.tx.send(json_str);
-        }
-        
+        if let Ok(json_str) = serde_json::to_string(&entry) { let _ = self.tx.send(json_str); }
         Ok(Response::new(IngestLogResponse { success: true }))
     }
 }
@@ -83,40 +73,33 @@ async fn main() -> anyhow::Result<()> {
     let self_id = env::var("HOSTNAME").unwrap_or_else(|_| "unknown".into());
     let enable_sniffer = env::var("ENABLE_NETWORK_SNIFFER").unwrap_or_else(|_| "false".to_string()) == "true";
 
-    info!("👁️ Sentiric Observer v1.1.0 (SNI) | Node: {} starting...", node_name);
+    info!("👁️ Sentiric Observer v1.2.0 | Node: {} | Sniffer: {}", node_name, enable_sniffer);
 
     let docker = Arc::new(Docker::connect_with_local_defaults().expect("Docker fail"));
     let (tx, _) = broadcast::channel::<String>(10000); 
     let tx = Arc::new(tx);
-    
     let app_state = AppState { tx: tx.clone() };
 
-    // --- 1. NETWORK SNIFFER TASK (YENİ) ---
     if enable_sniffer {
         let tx_net = tx.clone();
         let node_id_net = node_name.clone();
-        
-        // Blocking task olduğu için spawn_blocking veya ayrı thread kullanıyoruz
         std::thread::spawn(move || {
             start_network_sniffer(tx_net, node_id_net);
         });
     }
 
-    // --- 2. UNIFIED FORWARDER TASK ---
     if let Some(url) = upstream_url.filter(|u| !u.is_empty()) {
         let tx_clone = tx.clone();
         let node_id_clone = node_name.clone().to_uppercase();
         tokio::spawn(async move {
-            info!("🔗 Forwarding logs to Nexus: {}", url);
+            info!("🔗 Nexus Forwarder Active: {}", url);
             let mut rx = tx_clone.subscribe();
             loop {
                 match ObserverServiceClient::connect(url.clone()).await {
                     Ok(mut client) => {
-                        info!("✅ Connected to Nexus Cluster");
                         while let Ok(msg) = rx.recv().await {
                             if let Ok(entry) = serde_json::from_str::<LogEntry>(&msg) {
                                 if entry.node != node_id_clone { continue; }
-                                
                                 let req = IngestLogRequest {
                                     service_name: entry.service,
                                     message: entry.msg,
@@ -134,7 +117,6 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
-    // --- 3. DOCKER HARVESTER ---
     let initial_containers = docker.list_containers(Some(ListContainersOptions::<String> { all: false, ..Default::default() })).await?;
     for c in initial_containers {
         if let Some(id) = c.id {
@@ -158,10 +140,12 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
-    // --- 4. SERVERS ---
     let app_state_axum = app_state.clone();
     let axum_task = tokio::spawn(async move {
-        let app = Router::new().route("/", get(index_handler)).route("/ws", get(ws_handler)).with_state(app_state_axum);
+        let app = Router::new()
+            .route("/", get(index_handler))
+            .route("/ws", get(ws_handler))
+            .with_state(app_state_axum);
         let listener = tokio::net::TcpListener::bind("0.0.0.0:11070").await.unwrap();
         axum::serve(listener, app).await.unwrap();
     });
@@ -176,70 +160,70 @@ async fn main() -> anyhow::Result<()> {
 }
 
 fn start_network_sniffer(tx: Arc<broadcast::Sender<String>>, node_name: String) {
-    info!("📡 Network Sniffer Initializing on ANY interface...");
-    
-    // [FIX]: 'mut' kaldırıldı çünkü cap değişkeni capture'a taşınırken değiştirilmiyor
-    let cap = match Capture::from_device("any") {
-        Ok(c) => c.promisc(true).snaplen(65535).timeout(1000).open(),
-        Err(e) => {
-            error!("Failed to open capture device: {}", e);
-            return;
-        }
-    };
+    info!("📡 [SNI] Global Network Sniffer initializing on 'any'...");
+
+    let cap = Capture::from_device("any")
+        .expect("Failed to find 'any' device")
+        .promisc(true)
+        .snaplen(65535)
+        .timeout(100) 
+        .open();
 
     let mut capture = match cap {
         Ok(c) => c,
         Err(e) => {
-            error!("Failed to activate capture: {}", e);
+            error!("🚨 [SNI-FATAL] pcap activation failed: {}. Ensure root/CAP_NET_RAW.", e);
             return;
         }
     };
 
-    // SIP Filtresi (Port 5060 veya Sentiric İç Portları)
     if let Err(e) = capture.filter("udp and (port 5060 or portrange 13000-13100)", true) {
-        error!("BPF Filter Error: {}", e);
+        error!("🚨 [SNI-FATAL] BPF filter error: {}", e);
         return;
     }
 
-    info!("📡 Sniffer Active: Filtering SIP traffic...");
+    info!("📡 [SNI] Oracle Active: Capturing SIP traffic across all interfaces...");
 
-    while let Ok(packet) = capture.next_packet() {
-        // Raw byte'ları parse et
-        if let Ok(sliced) = SlicedPacket::from_ethernet(&packet.data) {
-            if let Some(TransportSlice::Udp(udp)) = sliced.transport {
-                let payload = sliced.payload;
-                
-                if payload.len() < 4 { continue; }
-                
-                if let Ok(text) = std::str::from_utf8(payload) {
-                    if text.starts_with("SIP/2.0") || 
-                       text.starts_with("INVITE") || 
-                       text.starts_with("ACK") || 
-                       text.starts_with("BYE") || 
-                       text.starts_with("CANCEL") ||
-                       text.starts_with("REGISTER") ||
-                       text.starts_with("OPTIONS") {
-                        
-                        let src_port = udp.source_port();
-                        let dst_port = udp.destination_port();
-                        
-                        let entry = LogEntry {
-                            ts: chrono::Utc::now().to_rfc3339(),
-                            node: node_name.to_uppercase(),
-                            service: format!("SIP-NET [{}->{}]", src_port, dst_port),
-                            level: "TRACE".into(),
-                            msg: text.to_string(),
-                            source_type: "network".into(),
-                        };
+    loop {
+        match capture.next_packet() {
+            Ok(packet) => {
+                let text = String::from_utf8_lossy(packet.data);
 
-                        if let Ok(json_str) = serde_json::to_string(&entry) {
-                            let _ = tx.send(json_str);
-                        }
+                if let Some(idx) = find_sip_start(&text) {
+                    let sip_content = &text[idx..];
+                    
+                    info!("🎯 [SNI] SIP Packet Captured! ({} bytes)", sip_content.len());
+
+                    let entry = LogEntry {
+                        ts: chrono::Utc::now().to_rfc3339(),
+                        node: node_name.to_uppercase(),
+                        service: "NETWORK-SNIFFER".into(),
+                        level: "TRACE".into(),
+                        msg: sip_content.to_string(),
+                        source_type: "network".into(),
+                    };
+
+                    if let Ok(json_str) = serde_json::to_string(&entry) {
+                        let _ = tx.send(json_str);
                     }
                 }
             }
+            Err(pcap::Error::TimeoutExpired) => continue,
+            Err(e) => {
+                error!("🚨 [SNI] Capture loop error: {}", e);
+                break;
+            }
         }
     }
+    warn!("🚨 [SNI] Network sniffer thread terminated.");
+}
+
+fn find_sip_start(text: &str) -> Option<usize> {
+    let keywords = ["INVITE ", "SIP/2.0 ", "ACK ", "BYE ", "REGISTER ", "OPTIONS ", "CANCEL "];
+    for kw in keywords {
+        if let Some(pos) = text.find(kw) { return Some(pos); }
+    }
+    None
 }
 
 fn start_harvesting(docker: Arc<Docker>, tx: Arc<broadcast::Sender<String>>, container_id: String, self_id: String, node_name: String) {
@@ -284,9 +268,11 @@ fn start_harvesting(docker: Arc<Docker>, tx: Arc<broadcast::Sender<String>>, con
 }
 
 async fn index_handler() -> Html<&'static str> { Html(include_str!("index.html")) }
-async fn ws_handler(ws: WebSocketUpgrade, axum::extract::State(state): axum::extract::State<AppState>) -> axum::response::Response {
-    ws.on_upgrade(|socket| handle_socket(socket, state.tx))
+
+async fn ws_handler(ws: WebSocketUpgrade, ax_state: axum::extract::State<AppState>) -> axum::response::Response {
+    ws.on_upgrade(move |socket| handle_socket(socket, ax_state.tx.clone()))
 }
+
 async fn handle_socket(mut socket: WebSocket, tx: Arc<broadcast::Sender<String>>) {
     let mut rx = tx.subscribe();
     let mut heartbeat = tokio::time::interval(std::time::Duration::from_secs(30));
