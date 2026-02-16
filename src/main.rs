@@ -13,10 +13,12 @@ use futures_util::stream::StreamExt;
 use std::env;
 use std::sync::Arc;
 use tokio::sync::broadcast;
-use tracing::{info, error, warn}; 
+use tracing::{info, error, warn, debug}; 
 use regex::Regex;
 use serde::{Serialize, Deserialize};
 use pcap::Capture;
+use std::time::Instant;
+use std::sync::Mutex;
 
 pub mod observer_proto {
     tonic::include_proto!("sentiric.observer.v1");
@@ -73,7 +75,7 @@ async fn main() -> anyhow::Result<()> {
     let self_id = env::var("HOSTNAME").unwrap_or_else(|_| "unknown".into());
     let enable_sniffer = env::var("ENABLE_NETWORK_SNIFFER").unwrap_or_else(|_| "false".to_string()) == "true";
 
-    info!("👁️ Sentiric Observer v1.2.0 | Node: {} | Sniffer: {}", node_name, enable_sniffer);
+    info!("👁️ Sentiric Observer v1.3.0 (RTP-Aware) | Node: {} | Sniffer: {}", node_name, enable_sniffer);
 
     let docker = Arc::new(Docker::connect_with_local_defaults().expect("Docker fail"));
     let (tx, _) = broadcast::channel::<String>(10000); 
@@ -177,23 +179,37 @@ fn start_network_sniffer(tx: Arc<broadcast::Sender<String>>, node_name: String) 
         }
     };
 
-    if let Err(e) = capture.filter("udp and (port 5060 or portrange 13000-13100)", true) {
+    // [GÜNCELLEME]: RTP Port aralığını (30000-60000) dinleme listesine ekle
+    // Filter: UDP ve (SIP Ports VEYA RTP Range)
+    let filter = "udp and (port 5060 or portrange 13000-13100 or portrange 30000-60000)";
+    
+    if let Err(e) = capture.filter(filter, true) {
         error!("🚨 [SNI-FATAL] BPF filter error: {}", e);
         return;
     }
 
-    info!("📡 [SNI] Oracle Active: Capturing SIP traffic across all interfaces...");
+    info!("📡 [SNI] Oracle Active: Capturing SIP & RTP traffic (Filter: {})...", filter);
+
+    let mut rtp_packet_counter = 0u64;
+    let mut last_rtp_log = Instant::now();
 
     loop {
         match capture.next_packet() {
             Ok(packet) => {
-                let text = String::from_utf8_lossy(packet.data);
+                let data = packet.data;
+                // Minimum UDP header (8) + RTP header (12) = 20 bytes
+                if data.len() < 20 { continue; }
 
-                if let Some(idx) = find_sip_start(&text) {
-                    let sip_content = &text[idx..];
+                // Ethernet/IP/UDP header offsetlerini atlayıp payload'a ulaşmak zor (Any device).
+                // Ancak basit bir heuristic kullanabiliriz:
+                // Metin (SIP) mi Binary (RTP) mi?
+                
+                // 1. SIP Kontrolü (Metin)
+                let text_preview = String::from_utf8_lossy(&data);
+                if let Some(idx) = find_sip_start(&text_preview) {
+                    let sip_content = &text_preview[idx..];
                     
-                    info!("🎯 [SNI] SIP Packet Captured! ({} bytes)", sip_content.len());
-
+                    // SIP Log
                     let entry = LogEntry {
                         ts: chrono::Utc::now().to_rfc3339(),
                         node: node_name.to_uppercase(),
@@ -202,9 +218,31 @@ fn start_network_sniffer(tx: Arc<broadcast::Sender<String>>, node_name: String) 
                         msg: sip_content.to_string(),
                         source_type: "network".into(),
                     };
+                    if let Ok(json_str) = serde_json::to_string(&entry) { let _ = tx.send(json_str); }
+                    continue;
+                }
 
-                    if let Ok(json_str) = serde_json::to_string(&entry) {
-                        let _ = tx.send(json_str);
+                // 2. RTP Kontrolü (Binary)
+                // Bu kısım "Any" interface'inde offset bulmak zor olduğu için %100 kesin değildir,
+                // ama trafik yoğunluğunu göstermek için yeterlidir.
+                // Basitçe, SIP olmayan ve boyutu makul (örn > 50 byte) her UDP paketini RTP adayı sayalım.
+                if data.len() > 50 {
+                    rtp_packet_counter += 1;
+
+                    // Her 200 pakette bir veya 2 saniyede bir log bas (Throttling)
+                    if rtp_packet_counter % 200 == 0 || last_rtp_log.elapsed().as_secs() >= 2 {
+                        let entry = LogEntry {
+                            ts: chrono::Utc::now().to_rfc3339(),
+                            node: node_name.to_uppercase(),
+                            service: "NETWORK-SNIFFER".into(),
+                            level: "DEBUG".into(), // TRACE yerine DEBUG
+                            msg: format!("📊 RTP TRAFFIC FLOW DETECTED: {} packets captured in interval.", rtp_packet_counter),
+                            source_type: "network".into(),
+                        };
+                        if let Ok(json_str) = serde_json::to_string(&entry) { let _ = tx.send(json_str); }
+                        
+                        rtp_packet_counter = 0;
+                        last_rtp_log = Instant::now();
                     }
                 }
             }
