@@ -3,10 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SENTIRIC | COCKPIT PRO v3.7 (AI-EXPORT)</title>
+    <title>SENTIRIC | COCKPIT PRO v3.7 (AI-EXPORT + PAUSE)</title>
     <link rel="icon" href="data:;base64,iVBORw0KGgo=">
     <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
-    <!-- Zip kütüphanesi opsiyonel, şimdilik tekli dosyalarla ilerliyoruz -->
     <style>
         :root { 
             --primary: #00ff9d; --bg: #050505; --panel: #0f0f0f; --text: #d0d0d0; 
@@ -20,11 +19,24 @@
         .brand { font-weight: 900; letter-spacing: 2px; color: #fff; }
         .brand span { color: var(--primary); }
 
-        #stats-bar { display: flex; gap: 15px; font-size: 11px; }
+        #stats-bar { display: flex; gap: 15px; font-size: 11px; align-items: center; }
         .stat-box { background: #111; border: 1px solid var(--border); padding: 4px 12px; border-radius: 4px; border-left: 3px solid var(--primary); }
         .stat-val { font-weight: bold; color: #fff; margin-left: 5px; }
+        
+        #pause-indicator { 
+            background: var(--warn); 
+            color: #000; 
+            padding: 4px 12px; 
+            border-radius: 4px; 
+            font-size: 11px; 
+            font-weight: bold; 
+            margin-left: 10px;
+            display: none;
+            border: 1px solid #ffae00aa;
+            box-shadow: 0 0 10px rgba(255, 174, 0, 0.3);
+        }
 
-        #toolbar { background: var(--panel); padding: 10px 20px; border-bottom: 1px solid var(--border); display: flex; gap: 20px; align-items: center; }
+        #toolbar { background: var(--panel); padding: 10px 20px; border-bottom: 1px solid var(--border); display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
         .filter-section { display: flex; gap: 6px; align-items: center; border-right: 1px solid #333; padding-right: 15px; }
         .lbl { font-size: 10px; text-transform: uppercase; color: #555; font-weight: 800; }
 
@@ -59,15 +71,29 @@
         
         .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 5px; background: #ff4444; }
         .dot.online { background: var(--primary); box-shadow: 0 0 8px var(--primary); }
+
+        .buffer-badge {
+            background: var(--warn);
+            color: #000;
+            font-size: 10px;
+            padding: 2px 6px;
+            border-radius: 10px;
+            margin-left: 8px;
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
     <header>
-        <div class="brand">SENTIRIC <span>COCKPIT</span> <small>v3.7 AI-EXPORT</small></div>
+        <div class="brand">SENTIRIC <span>COCKPIT</span> <small>v3.7 PAUSE-BUFFER</small></div>
         <div id="stats-bar">
             <div class="stat-box">MB-RX<span id="v-rx" class="stat-val">0</span></div>
             <div class="stat-box">MB-TX<span id="v-tx" class="stat-val">0</span></div>
-            <div id="ws-status"><span id="status-dot" class="dot"></span> <span id="status-text">OFFLINE</span></div>
+            <div id="ws-status">
+                <span id="status-dot" class="dot"></span> 
+                <span id="status-text">OFFLINE</span>
+            </div>
+            <div id="pause-indicator">⏸️ PAUSED</div>
         </div>
     </header>
 
@@ -84,6 +110,14 @@
             <input type="text" id="search" placeholder="Search Call-ID..." oninput="refreshView()">
             <button class="f-btn" onclick="clearDb()" style="color:var(--error)">PURGE</button>
         </div>
+        
+        <!-- YENİ: PAUSE BUTONU -->
+        <div class="filter-section" style="border-left: 1px solid #333; padding-left: 15px;">
+            <span class="lbl" style="color:var(--primary)">CONTROL</span>
+            <button id="pauseBtn" class="f-btn" onclick="togglePause()" style="min-width: 80px;">⏸️ PAUSE</button>
+            <span id="bufferCount" class="buffer-badge" style="display: none;">0</span>
+        </div>
+
         <!-- EXPORT SECTION -->
         <div class="filter-section" style="border:none">
             <span class="lbl" style="color:var(--warn)">AI TOOLS</span>
@@ -107,9 +141,13 @@
         mermaid.initialize({ startOnLoad: false, theme: 'dark' });
         const consoleEl = document.getElementById('console');
         const statusDot = document.getElementById('status-dot');
+        const pauseIndicator = document.getElementById('pause-indicator');
+        const pauseBtn = document.getElementById('pauseBtn');
+        const bufferCountEl = document.getElementById('bufferCount');
         
         let logs = [];
         let isPaused = false;
+        let pausedBuffer = []; // YENİ: Buffer array'i
         let knownNodes = new Set();
         let knownServices = new Set();
         let activeNodes = new Set();
@@ -122,29 +160,122 @@
         dbReq.onsuccess = (e) => { db = e.target.result; loadHistory(); };
 
         const ws = new WebSocket(`ws://${window.location.host}/ws`);
-        ws.onopen = () => { statusDot.className = 'dot online'; document.getElementById('status-text').innerText = 'LIVE'; };
-        ws.onmessage = (e) => { try { processEntry(JSON.parse(e.data), true); } catch(err){} };
+        ws.onopen = () => { 
+            statusDot.className = 'dot online'; 
+            document.getElementById('status-text').innerText = 'LIVE'; 
+        };
+        
+        // GÜNCELLENMİŞ: Pause kontrollü message handler
+        ws.onmessage = (e) => { 
+            try { 
+                const entry = JSON.parse(e.data);
+                
+                if (isPaused) {
+                    // Pause durumunda buffer'a ekle
+                    pausedBuffer.push(entry);
+                    
+                    // Buffer çok büyümesin (max 2000)
+                    if (pausedBuffer.length > 2000) {
+                        pausedBuffer.shift();
+                    }
+                    
+                    // Buffer sayacını güncelle
+                    updateBufferCounter();
+                } else {
+                    // Normal akışta direkt işle
+                    processEntry(entry, true);
+                }
+            } catch(err){} 
+        };
+
+        // YENİ: Buffer sayacını güncelle
+        function updateBufferCounter() {
+            if (pausedBuffer.length > 0) {
+                bufferCountEl.style.display = 'inline-block';
+                bufferCountEl.textContent = pausedBuffer.length;
+            } else {
+                bufferCountEl.style.display = 'none';
+            }
+        }
+
+        // YENİ: Pause toggle fonksiyonu
+        function togglePause() {
+            isPaused = !isPaused;
+            
+            if (isPaused) {
+                pauseBtn.innerHTML = '▶️ RESUME';
+                pauseBtn.style.color = 'var(--warn)';
+                pauseBtn.style.borderColor = 'var(--warn)';
+                pauseIndicator.style.display = 'inline-block';
+            } else {
+                pauseBtn.innerHTML = '⏸️ PAUSE';
+                pauseBtn.style.color = '';
+                pauseBtn.style.borderColor = '';
+                pauseIndicator.style.display = 'none';
+                
+                // RESUME: Buffer'daki tüm logları işle
+                if (pausedBuffer.length > 0) {
+                    // Buffer boyutunu göster
+                    const bufferSize = pausedBuffer.length;
+                    
+                    // Buffer'daki her entry'i işle
+                    pausedBuffer.forEach(entry => processEntry(entry, true));
+                    
+                    // Buffer'ı temizle
+                    pausedBuffer = [];
+                    updateBufferCounter();
+                    
+                    // Kullanıcıya bildirim (konsolda görünsün diye bir log ekle)
+                    const notification = {
+                        ts: new Date().toISOString(),
+                        node: 'SYSTEM',
+                        service: 'COCKPIT',
+                        level: 'INFO',
+                        msg: `📦 Buffer'dan ${bufferSize} log yüklendi`,
+                        source_type: 'system'
+                    };
+                    processEntry(notification, false); // DB'ye kaydetme
+                }
+            }
+        }
 
         function processEntry(entry, saveToDb) {
+            // Node ve Service kontrolleri
             if (!knownNodes.has(entry.node)) {
-                knownNodes.add(entry.node); activeNodes.add(entry.node);
+                knownNodes.add(entry.node); 
+                activeNodes.add(entry.node);
                 createFilterBtn('filter-nodes', entry.node, 'node');
             }
             if (!knownServices.has(entry.service)) {
-                knownServices.add(entry.service); activeServices.add(entry.service);
+                knownServices.add(entry.service); 
+                activeServices.add(entry.service);
                 createFilterBtn('filter-services', entry.service, 'svc');
             }
+            
+            // Log'u array'e ekle
             logs.push(entry);
-            if (logs.length > 5000) logs.shift(); // Limit artırıldı
-            if (saveToDb && db) db.transaction("logs", "readwrite").objectStore("logs").add(entry);
+            if (logs.length > 5000) logs.shift(); // Limit 5000
+            
+            // DB'ye kaydet (saveToDb true ise)
+            if (saveToDb && db) {
+                try {
+                    db.transaction("logs", "readwrite").objectStore("logs").add(entry);
+                } catch (e) {
+                    console.warn('DB save error:', e);
+                }
+            }
+            
+            // UI'da göster (aktif filtreler ve search'e göre)
             renderLine(entry);
         }
 
         function renderLine(entry) {
             if (!activeNodes.has(entry.node) || !activeServices.has(entry.service)) return;
+            
             const search = document.getElementById('search').value.toLowerCase();
             if (search && !JSON.stringify(entry).toLowerCase().includes(search)) return;
 
+            // RTP Stats özel işleme
             if (entry.msg.includes("RtpStats")) {
                 const rx = entry.msg.match(/rx_cnt: (\d+)/)?.[1] || "0";
                 const tx = entry.msg.match(/tx_cnt: (\d+)/)?.[1] || "0";
@@ -154,8 +285,11 @@
             }
 
             const row = document.createElement('div');
-            let typeClass = entry.source_type === 'network' ? 'l-network' : (entry.node.includes('GCP') ? 'l-remote' : 'l-local');
-            if (entry.level === 'ERROR' || entry.msg.includes('Error') || entry.msg.includes('Fail')) typeClass = 'l-error';
+            let typeClass = entry.source_type === 'network' ? 'l-network' : 
+                           (entry.node.includes('GCP') ? 'l-remote' : 'l-local');
+            if (entry.level === 'ERROR' || entry.msg.includes('Error') || entry.msg.includes('Fail')) {
+                typeClass = 'l-error';
+            }
             
             row.className = `line ${typeClass}`;
 
@@ -212,9 +346,8 @@
                 if (!msg) return;
                 
                 let src = l.source_type === 'network' ? "NETWORK" : l.service.replace("-SERVICE", "");
-                let dst = l.source_type === 'network' ? "SBC/CORE" : "NETWORK"; // Basitleştirilmiş
+                let dst = l.source_type === 'network' ? "SBC/CORE" : "NETWORK";
                 
-                // Kaynağı/Hedefi daha akıllı belirle
                 if (l.service === 'SBC-SERVICE') { src = 'SBC'; dst = 'CORE'; }
                 if (l.service === 'PROXY-SERVICE') { src = 'PROXY'; dst = 'DIALPLAN/B2BUA'; }
                 if (l.service === 'MOBILE-SDK') { src = 'MOBILE'; dst = 'NETWORK'; }
@@ -231,13 +364,27 @@
             const store = db.transaction("logs", "readonly").objectStore("logs");
             store.openCursor(null, 'prev').onsuccess = (e) => {
                 const cursor = e.target.result;
-                if (cursor && logs.length < 2000) { logs.unshift(cursor.value); cursor.continue(); }
-                else { refreshView(); }
+                if (cursor && logs.length < 2000) { 
+                    logs.unshift(cursor.value); 
+                    cursor.continue(); 
+                }
+                else { 
+                    refreshView(); 
+                }
             };
         }
 
-        function clearDb() { if(confirm("Clear local DB?")) { db.transaction("logs", "readwrite").objectStore("logs").clear(); location.reload(); } }
-        function refreshView() { consoleEl.innerHTML = ""; logs.forEach(renderLine); }
+        function clearDb() { 
+            if(confirm("Clear local DB?")) { 
+                db.transaction("logs", "readwrite").objectStore("logs").clear(); 
+                location.reload(); 
+            } 
+        }
+        
+        function refreshView() { 
+            consoleEl.innerHTML = ""; 
+            logs.forEach(renderLine); 
+        }
 
         // ==========================================
         // 📤 EXPORT ENGINE (AI-READY)
@@ -255,19 +402,16 @@
         }
 
         function exportJson() {
-            // Ham veriyi olduğu gibi indir (AI Parsing için en iyisi)
             const jsonStr = JSON.stringify(logs, null, 2);
             downloadFile(jsonStr, `sentiric_logs_${new Date().toISOString()}.json`, "application/json");
         }
 
         function exportReport() {
-            // Markdown raporu oluştur
             let md = `# 🕵️ SENTIRIC DIAGNOSTIC REPORT\n`;
             md += `**Date:** ${new Date().toISOString()}\n`;
             md += `**Total Logs:** ${logs.length}\n`;
             md += `**Nodes:** ${Array.from(knownNodes).join(', ')}\n\n`;
 
-            // 1. Error Summary
             const errors = logs.filter(l => l.level === 'ERROR' || l.msg.includes("Error") || l.msg.includes("Fail"));
             if (errors.length > 0) {
                 md += `## 🚨 ERROR SUMMARY (${errors.length})\n`;
@@ -277,14 +421,11 @@
                 md += `\n`;
             }
 
-            // 2. SIP Call Analysis
-            // Call-ID'leri bul
             const callIds = new Set();
             const sipRegex = /Call-ID: ([\w-]+)/;
             logs.forEach(l => {
                 const match = l.msg.match(sipRegex);
                 if (match) callIds.add(match[1]);
-                // JSON içindeki call_id alanına da bak
                 if (l.call_id) callIds.add(l.call_id);
             });
 
@@ -293,10 +434,8 @@
                 callIds.forEach(cid => {
                     md += `### Call-ID: \`${cid}\`\n`;
                     
-                    // Bu çağrıya ait loglar
                     const callLogs = logs.filter(l => JSON.stringify(l).includes(cid));
                     
-                    // Zamanlama Analizi
                     if (callLogs.length > 0) {
                         const start = new Date(callLogs[0].ts);
                         const end = new Date(callLogs[callLogs.length-1].ts);
@@ -304,7 +443,6 @@
                         md += `- **Duration:** ${duration}s\n`;
                     }
 
-                    // Mermaid Diyagramı
                     md += `\n\`\`\`mermaid\nsequenceDiagram\nautonumber\n`;
                     callLogs.forEach(l => {
                         let msgShort = "MSG";
@@ -314,13 +452,11 @@
                         else if(l.msg.includes("BYE")) msgShort = "BYE";
                         else if(l.msg.includes("100 Trying")) msgShort = "100 Trying";
                         
-                        // Sadece önemli sinyalleri çiz
                         if (msgShort === "MSG") return;
 
                         let src = l.service.replace("-SERVICE", "").replace("MOBILE-SDK", "MOBILE");
                         if (l.source_type === 'network') src = "NETWORK";
                         
-                        // Basit bir hedef tahmini (Gerçek hedefi logdan bilmek zor ama akış yönü için)
                         let dst = "?";
                         if (src === "MOBILE") dst = "SBC";
                         else if (src === "SBC") dst = "PROXY";
@@ -331,7 +467,6 @@
                     });
                     md += `\`\`\`\n\n`;
 
-                    // SDP Detayları
                     const sdpLogs = callLogs.filter(l => l.msg.includes("m=audio"));
                     if (sdpLogs.length > 0) {
                         md += `#### 📡 SDP Negotiation Highlights\n`;
