@@ -3,9 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SENTIRIC | COCKPIT PRO v3.6 (SNI)</title>
+    <title>SENTIRIC | COCKPIT PRO v3.7 (AI-EXPORT)</title>
     <link rel="icon" href="data:;base64,iVBORw0KGgo=">
     <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <!-- Zip kütüphanesi opsiyonel, şimdilik tekli dosyalarla ilerliyoruz -->
     <style>
         :root { 
             --primary: #00ff9d; --bg: #050505; --panel: #0f0f0f; --text: #d0d0d0; 
@@ -30,6 +31,9 @@
         .f-btn { background: #1a1a1a; border: 1px solid #333; color: #666; padding: 5px 12px; font-size: 11px; cursor: pointer; border-radius: 4px; transition: 0.2s; }
         .f-btn.active { border-color: var(--primary); color: var(--primary); background: rgba(0, 255, 157, 0.08); }
         .f-btn.active.n-network { border-color: var(--network); color: var(--network); background: rgba(255, 0, 255, 0.08); }
+        
+        .e-btn { background: #1a1a1a; border: 1px solid var(--warn); color: var(--warn); padding: 5px 12px; font-size: 11px; cursor: pointer; border-radius: 4px; font-weight: bold; }
+        .e-btn:hover { background: var(--warn); color: #000; }
 
         #workspace { display: flex; flex: 1; overflow: hidden; }
         #console { flex: 2; overflow-y: auto; padding: 15px; background: #080808; }
@@ -47,6 +51,7 @@
         .l-remote { border-left-color: var(--remote); }
         .l-mobile { border-left-color: var(--mobile); }
         .l-network { border-left-color: var(--network); background: rgba(255, 0, 255, 0.03); }
+        .l-error { border-left-color: var(--error); background: rgba(255, 68, 68, 0.1); color: #ffcece; }
 
         .sip-packet { background: rgba(0, 212, 255, 0.04); color: var(--remote); border-radius: 4px; padding: 10px; margin-top: 5px; border: 1px solid #00d4ff22; font-size: 11px; white-space: pre-wrap; }
         .net-packet { background: rgba(255, 0, 255, 0.04); color: var(--network); border: 1px solid rgba(255, 0, 255, 0.2); }
@@ -58,7 +63,7 @@
 </head>
 <body>
     <header>
-        <div class="brand">SENTIRIC <span>COCKPIT</span> <small>v3.6 SNI</small></div>
+        <div class="brand">SENTIRIC <span>COCKPIT</span> <small>v3.7 AI-EXPORT</small></div>
         <div id="stats-bar">
             <div class="stat-box">MB-RX<span id="v-rx" class="stat-val">0</span></div>
             <div class="stat-box">MB-TX<span id="v-tx" class="stat-val">0</span></div>
@@ -78,6 +83,12 @@
         <div class="filter-section">
             <input type="text" id="search" placeholder="Search Call-ID..." oninput="refreshView()">
             <button class="f-btn" onclick="clearDb()" style="color:var(--error)">PURGE</button>
+        </div>
+        <!-- EXPORT SECTION -->
+        <div class="filter-section" style="border:none">
+            <span class="lbl" style="color:var(--warn)">AI TOOLS</span>
+            <button class="e-btn" onclick="exportJson()">JSON DUMP</button>
+            <button class="e-btn" onclick="exportReport()">REPORT (MD)</button>
         </div>
     </div>
 
@@ -124,7 +135,7 @@
                 createFilterBtn('filter-services', entry.service, 'svc');
             }
             logs.push(entry);
-            if (logs.length > 3000) logs.shift();
+            if (logs.length > 5000) logs.shift(); // Limit artırıldı
             if (saveToDb && db) db.transaction("logs", "readwrite").objectStore("logs").add(entry);
             renderLine(entry);
         }
@@ -144,12 +155,14 @@
 
             const row = document.createElement('div');
             let typeClass = entry.source_type === 'network' ? 'l-network' : (entry.node.includes('GCP') ? 'l-remote' : 'l-local');
+            if (entry.level === 'ERROR' || entry.msg.includes('Error') || entry.msg.includes('Fail')) typeClass = 'l-error';
+            
             row.className = `line ${typeClass}`;
 
             let displayMsg = entry.msg.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
             displayMsg = displayMsg.replace(/(uac-[a-f0-9]+)/g, '<span class="call-id" onclick="focusCall(\'$1\')">$1</span>');
 
-            if (entry.source_type === 'network' || displayMsg.includes("INVITE") || displayMsg.includes("200 OK")) {
+            if (entry.source_type === 'network' || displayMsg.includes("INVITE") || displayMsg.includes("200 OK") || displayMsg.includes("SIP/2.0")) {
                 let subClass = entry.source_type === 'network' ? 'net-packet' : '';
                 displayMsg = `<div class="sip-packet ${subClass}">${displayMsg}</div>`;
             }
@@ -162,7 +175,7 @@
             `;
             consoleEl.appendChild(row);
             consoleEl.scrollTop = consoleEl.scrollHeight;
-            if (consoleEl.childElementCount > 500) consoleEl.removeChild(consoleEl.firstChild);
+            if (consoleEl.childElementCount > 1000) consoleEl.removeChild(consoleEl.firstChild);
         }
 
         function createFilterBtn(containerId, name, type) {
@@ -188,12 +201,25 @@
         function generateFlow(callId) {
             let diag = "sequenceDiagram\nautonumber\n";
             logs.filter(l => JSON.stringify(l).includes(callId)).forEach(l => {
-                let msg = l.msg.includes("INVITE") ? "INVITE" : (l.msg.includes("200 OK") ? "200 OK" : (l.msg.includes("ACK") ? "ACK" : "BYE"));
-                if (!["INVITE", "200 OK", "ACK", "BYE"].some(v => l.msg.includes(v))) return;
+                let msg = "";
+                if(l.msg.includes("INVITE")) msg = "INVITE";
+                else if(l.msg.includes("100 Trying")) msg = "100 Trying";
+                else if(l.msg.includes("180 Ringing")) msg = "180 Ringing";
+                else if(l.msg.includes("200 OK")) msg = "200 OK";
+                else if(l.msg.includes("ACK")) msg = "ACK";
+                else if(l.msg.includes("BYE")) msg = "BYE";
+                
+                if (!msg) return;
                 
                 let src = l.source_type === 'network' ? "NETWORK" : l.service.replace("-SERVICE", "");
-                let dst = l.source_type === 'network' ? "INTERFACE" : "SYSTEM";
-                diag += `${src}->>+${dst}: ${msg}\n`;
+                let dst = l.source_type === 'network' ? "SBC/CORE" : "NETWORK"; // Basitleştirilmiş
+                
+                // Kaynağı/Hedefi daha akıllı belirle
+                if (l.service === 'SBC-SERVICE') { src = 'SBC'; dst = 'CORE'; }
+                if (l.service === 'PROXY-SERVICE') { src = 'PROXY'; dst = 'DIALPLAN/B2BUA'; }
+                if (l.service === 'MOBILE-SDK') { src = 'MOBILE'; dst = 'NETWORK'; }
+
+                diag += `${src}->>${dst}: ${msg}\n`;
             });
             const el = document.getElementById('mermaid-chart');
             el.removeAttribute('data-processed');
@@ -205,12 +231,122 @@
             const store = db.transaction("logs", "readonly").objectStore("logs");
             store.openCursor(null, 'prev').onsuccess = (e) => {
                 const cursor = e.target.result;
-                if (cursor && logs.length < 1000) { processEntry(cursor.value, false); cursor.continue(); }
+                if (cursor && logs.length < 2000) { logs.unshift(cursor.value); cursor.continue(); }
+                else { refreshView(); }
             };
         }
 
         function clearDb() { if(confirm("Clear local DB?")) { db.transaction("logs", "readwrite").objectStore("logs").clear(); location.reload(); } }
         function refreshView() { consoleEl.innerHTML = ""; logs.forEach(renderLine); }
+
+        // ==========================================
+        // 📤 EXPORT ENGINE (AI-READY)
+        // ==========================================
+
+        function downloadFile(content, fileName, mimeType) {
+            const blob = new Blob([content], { type: mimeType });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+
+        function exportJson() {
+            // Ham veriyi olduğu gibi indir (AI Parsing için en iyisi)
+            const jsonStr = JSON.stringify(logs, null, 2);
+            downloadFile(jsonStr, `sentiric_logs_${new Date().toISOString()}.json`, "application/json");
+        }
+
+        function exportReport() {
+            // Markdown raporu oluştur
+            let md = `# 🕵️ SENTIRIC DIAGNOSTIC REPORT\n`;
+            md += `**Date:** ${new Date().toISOString()}\n`;
+            md += `**Total Logs:** ${logs.length}\n`;
+            md += `**Nodes:** ${Array.from(knownNodes).join(', ')}\n\n`;
+
+            // 1. Error Summary
+            const errors = logs.filter(l => l.level === 'ERROR' || l.msg.includes("Error") || l.msg.includes("Fail"));
+            if (errors.length > 0) {
+                md += `## 🚨 ERROR SUMMARY (${errors.length})\n`;
+                errors.forEach(e => {
+                    md += `- [${e.ts}] **${e.service}**: ${e.msg.substring(0, 150)}...\n`;
+                });
+                md += `\n`;
+            }
+
+            // 2. SIP Call Analysis
+            // Call-ID'leri bul
+            const callIds = new Set();
+            const sipRegex = /Call-ID: ([\w-]+)/;
+            logs.forEach(l => {
+                const match = l.msg.match(sipRegex);
+                if (match) callIds.add(match[1]);
+                // JSON içindeki call_id alanına da bak
+                if (l.call_id) callIds.add(l.call_id);
+            });
+
+            if (callIds.size > 0) {
+                md += `## 📞 SIP CALL ANALYSIS\n`;
+                callIds.forEach(cid => {
+                    md += `### Call-ID: \`${cid}\`\n`;
+                    
+                    // Bu çağrıya ait loglar
+                    const callLogs = logs.filter(l => JSON.stringify(l).includes(cid));
+                    
+                    // Zamanlama Analizi
+                    if (callLogs.length > 0) {
+                        const start = new Date(callLogs[0].ts);
+                        const end = new Date(callLogs[callLogs.length-1].ts);
+                        const duration = (end - start) / 1000;
+                        md += `- **Duration:** ${duration}s\n`;
+                    }
+
+                    // Mermaid Diyagramı
+                    md += `\n\`\`\`mermaid\nsequenceDiagram\nautonumber\n`;
+                    callLogs.forEach(l => {
+                        let msgShort = "MSG";
+                        if(l.msg.includes("INVITE")) msgShort = "INVITE";
+                        else if(l.msg.includes("200 OK")) msgShort = "200 OK";
+                        else if(l.msg.includes("ACK")) msgShort = "ACK";
+                        else if(l.msg.includes("BYE")) msgShort = "BYE";
+                        else if(l.msg.includes("100 Trying")) msgShort = "100 Trying";
+                        
+                        // Sadece önemli sinyalleri çiz
+                        if (msgShort === "MSG") return;
+
+                        let src = l.service.replace("-SERVICE", "").replace("MOBILE-SDK", "MOBILE");
+                        if (l.source_type === 'network') src = "NETWORK";
+                        
+                        // Basit bir hedef tahmini (Gerçek hedefi logdan bilmek zor ama akış yönü için)
+                        let dst = "?";
+                        if (src === "MOBILE") dst = "SBC";
+                        else if (src === "SBC") dst = "PROXY";
+                        else if (src === "PROXY") dst = "CORE";
+                        else dst = "SYSTEM";
+
+                        md += `${src}->>${dst}: ${msgShort}\n`;
+                    });
+                    md += `\`\`\`\n\n`;
+
+                    // SDP Detayları
+                    const sdpLogs = callLogs.filter(l => l.msg.includes("m=audio"));
+                    if (sdpLogs.length > 0) {
+                        md += `#### 📡 SDP Negotiation Highlights\n`;
+                        sdpLogs.forEach(l => {
+                            const audioLine = l.msg.match(/m=audio.*/)?.[0] || "";
+                            const ipLine = l.msg.match(/c=IN IP4.*/)?.[0] || "";
+                            md += `- **${l.service}**: \`${audioLine}\` | \`${ipLine}\`\n`;
+                        });
+                    }
+                    md += `\n---\n`;
+                });
+            }
+
+            downloadFile(md, `sentiric_report_${new Date().toISOString()}.md`, "text/markdown");
+        }
     </script>
 </body>
 </html>
