@@ -1,5 +1,3 @@
-// sentiric-observer/src/main.rs
-
 use axum::{
     extract::ws::{Message as WsMessage, WebSocket, WebSocketUpgrade},
     response::Html,
@@ -10,26 +8,15 @@ use bollard::container::{LogOutput, LogsOptions, ListContainersOptions};
 use bollard::system::EventsOptions;
 use bollard::Docker;
 use futures_util::stream::StreamExt;
-use std::env;
-use std::sync::Arc;
+use std::{env, sync::Arc, time::{Duration, Instant}};
 use tokio::sync::broadcast;
-use tracing::{info, error, warn, debug}; 
-use regex::Regex;
+use tracing::{info, warn};
 use serde::{Serialize, Deserialize};
 use pcap::Capture;
-use std::time::Instant;
-use std::sync::Mutex;
-
-pub mod observer_proto {
-    tonic::include_proto!("sentiric.observer.v1");
-}
-use observer_proto::observer_service_server::{ObserverService, ObserverServiceServer};
-use observer_proto::observer_service_client::ObserverServiceClient;
-use observer_proto::{IngestLogRequest, IngestLogResponse};
-use tonic::{Request, Response, Status};
+use sysinfo::System;
 
 lazy_static::lazy_static! {
-    static ref ANSI_REGEX: Regex = Regex::new(r"\x1b\[[0-9;]*[mK]").unwrap();
+    static ref ANSI_REGEX: regex::Regex = regex::Regex::new(r"\x1b\[[0-9;]*[mK]").unwrap();
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -42,6 +29,13 @@ struct LogEntry {
     source_type: String, 
 }
 
+pub mod observer_proto {
+    tonic::include_proto!("sentiric.observer.v1");
+}
+use observer_proto::observer_service_server::{ObserverService, ObserverServiceServer};
+use observer_proto::observer_service_client::ObserverServiceClient; // İSTEMCİ GERİ GELDİ
+use observer_proto::{IngestLogRequest, IngestLogResponse};
+
 #[derive(Clone)]
 pub struct AppState {
     tx: Arc<broadcast::Sender<String>>,
@@ -49,7 +43,7 @@ pub struct AppState {
 
 #[tonic::async_trait]
 impl ObserverService for AppState {
-    async fn ingest_log(&self, request: Request<IngestLogRequest>) -> Result<Response<IngestLogResponse>, Status> {
+    async fn ingest_log(&self, request: tonic::Request<IngestLogRequest>) -> Result<tonic::Response<IngestLogResponse>, tonic::Status> {
         let req = request.into_inner();
         let entry = LogEntry {
             ts: chrono::Utc::now().to_rfc3339(),
@@ -57,51 +51,78 @@ impl ObserverService for AppState {
             service: req.service_name.to_uppercase(),
             level: req.level.to_uppercase(),
             msg: req.message,
-            source_type: if req.service_name.contains("MOBILE") { "mobile".into() } else { "grpc".into() },
+            source_type: "grpc".into(),
         };
-        if let Ok(json_str) = serde_json::to_string(&entry) { let _ = self.tx.send(json_str); }
-        Ok(Response::new(IngestLogResponse { success: true }))
+        if let Ok(json_str) = serde_json::to_string(&entry) {
+            let _ = self.tx.send(json_str);
+        }
+        Ok(tonic::Response::new(IngestLogResponse { success: true }))
     }
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .init();
+    tracing_subscriber::fmt().with_env_filter("info").init();
 
-    let node_name = env::var("NODE_NAME").unwrap_or_else(|_| "unknown-node".into());
-    let upstream_url = env::var("UPSTREAM_OBSERVER_URL").ok();
-    let self_id = env::var("HOSTNAME").unwrap_or_else(|_| "unknown".into());
-    let enable_sniffer = env::var("ENABLE_NETWORK_SNIFFER").unwrap_or_else(|_| "false".to_string()) == "true";
+    let node_name = env::var("NODE_NAME").unwrap_or_else(|_| "sentiric-node".into());
+    let upstream_url = env::var("UPSTREAM_OBSERVER_URL").ok(); // UPSTREAM GERİ GELDİ
+    let enable_sniffer = env::var("ENABLE_NETWORK_SNIFFER").unwrap_or_default() == "true";
 
-    info!("👁️ Sentiric Observer v1.3.0 (RTP-Aware) | Node: {} | Sniffer: {}", node_name, enable_sniffer);
+    info!("👁️ Sentiric Observer v1.5.0 (Grand Unified) | Node: {} | Sniffer: {}", node_name, enable_sniffer);
 
-    let docker = Arc::new(Docker::connect_with_local_defaults().expect("Docker fail"));
-    let (tx, _) = broadcast::channel::<String>(10000); 
+    let (tx, _) = broadcast::channel::<String>(10000);
     let tx = Arc::new(tx);
     let app_state = AppState { tx: tx.clone() };
 
-    if enable_sniffer {
-        let tx_net = tx.clone();
-        let node_id_net = node_name.clone();
-        std::thread::spawn(move || {
-            start_network_sniffer(tx_net, node_id_net);
-        });
-    }
+    // --- 1. SYSTEM METRICS TASK ---
+    let tx_sys = tx.clone();
+    let node_sys = node_name.clone();
+    tokio::spawn(async move {
+        let mut sys = System::new_all();
+        loop {
+            sys.refresh_cpu_usage();
+            sys.refresh_memory();
+            
+            let cpu_usage = sys.global_cpu_usage();
+            let used_mem = sys.used_memory() / 1024 / 1024;
+            let total_mem = sys.total_memory() / 1024 / 1024;
+            
+            let msg = format!("📊 SYS_METRICS | CPU: {:.1}% | RAM: {}/{}MB", cpu_usage, used_mem, total_mem);
+            let entry = LogEntry {
+                ts: chrono::Utc::now().to_rfc3339(),
+                node: node_sys.to_uppercase(),
+                service: "SYSTEM".into(),
+                level: "INFO".into(),
+                msg,
+                source_type: "system".into(),
+            };
+            if let Ok(json) = serde_json::to_string(&entry) {
+                let _ = tx_sys.send(json);
+            }
+            tokio::time::sleep(Duration::from_secs(5)).await;
+        }
+    });
 
+    // --- 2. UPSTREAM FORWARDER (NEXUS LINK) ---
+    // [FIX]: Bu blok geri eklendi. Logları merkeze iletir.
     if let Some(url) = upstream_url.filter(|u| !u.is_empty()) {
-        let tx_clone = tx.clone();
-        let node_id_clone = node_name.clone().to_uppercase();
+        let tx_forward = tx.clone();
+        let node_id_fwd = node_name.clone().to_uppercase();
         tokio::spawn(async move {
             info!("🔗 Nexus Forwarder Active: {}", url);
-            let mut rx = tx_clone.subscribe();
+            let mut rx = tx_forward.subscribe();
+            
+            // Basit bir bağlantı döngüsü
             loop {
+                // Bağlantı kurulana kadar bekle
                 match ObserverServiceClient::connect(url.clone()).await {
                     Ok(mut client) => {
+                        info!("✅ Connected to Upstream Observer");
                         while let Ok(msg) = rx.recv().await {
                             if let Ok(entry) = serde_json::from_str::<LogEntry>(&msg) {
-                                if entry.node != node_id_clone { continue; }
+                                // Sonsuz döngüyü önlemek için kendi logunu tekrar kendine atma
+                                if entry.node == node_id_fwd && entry.source_type == "grpc" { continue; }
+                                
                                 let req = IngestLogRequest {
                                     service_name: entry.service,
                                     message: entry.msg,
@@ -109,220 +130,214 @@ async fn main() -> anyhow::Result<()> {
                                     trace_id: "".into(),
                                     node_id: entry.node,
                                 };
-                                if client.ingest_log(req).await.is_err() { break; }
+                                // Hata alırsak döngüyü kırıp yeniden bağlanmayı deneriz
+                                if client.ingest_log(req).await.is_err() { 
+                                    warn!("⚠️ Upstream connection lost.");
+                                    break; 
+                                }
                             }
                         }
+                    },
+                    Err(e) => {
+                        warn!("⚠️ Upstream connect failed: {}. Retrying in 5s...", e);
+                        tokio::time::sleep(Duration::from_secs(5)).await;
                     }
-                    Err(_) => tokio::time::sleep(std::time::Duration::from_secs(5)).await,
                 }
             }
         });
     }
 
+    // --- 3. SMART NETWORK SNIFFER ---
+    if enable_sniffer {
+        let tx_net = tx.clone();
+        let node_net = node_name.clone();
+        std::thread::spawn(move || start_smart_sniffer(tx_net, node_net));
+    }
+
+    // --- 4. DOCKER HARVESTER ---
+    let docker = Arc::new(Docker::connect_with_local_defaults().expect("Docker socket fail"));
+    
+    // A. Mevcut Konteynerler
     let initial_containers = docker.list_containers(Some(ListContainersOptions::<String> { all: false, ..Default::default() })).await?;
     for c in initial_containers {
         if let Some(id) = c.id {
-            start_harvesting(docker.clone(), tx.clone(), id, self_id.clone(), node_name.clone());
+            let d_clone = docker.clone();
+            let t_clone = tx.clone();
+            let n_clone = node_name.clone();
+            tokio::spawn(async move {
+                start_harvesting(d_clone, t_clone, id, n_clone).await;
+            });
         }
     }
 
+    // B. Event Listener (Restart/Start yakalama)
     let docker_events = docker.clone();
     let tx_events = tx.clone();
-    let self_id_events = self_id.clone();
-    let node_name_events = node_name.clone();
+    let node_events = node_name.clone();
     tokio::spawn(async move {
         let mut events = docker_events.events(Some(EventsOptions::<String> {
-            filters: [("event".into(), vec!["start".into()])].into(),
+            filters: [("event".into(), vec!["start".into(), "restart".into()])].into(),
             ..Default::default()
         }));
         while let Some(Ok(event)) = events.next().await {
             if let Some(actor) = event.actor {
-                start_harvesting(docker_events.clone(), tx_events.clone(), actor.id.unwrap_or_default(), self_id_events.clone(), node_name_events.clone());
+                if let Some(id) = actor.id {
+                    let d = docker_events.clone();
+                    let t = tx_events.clone();
+                    let n = node_events.clone();
+                    tokio::spawn(async move {
+                        // Container hazır olana kadar azıcık bekle
+                        tokio::time::sleep(Duration::from_millis(500)).await;
+                        start_harvesting(d, t, id, n).await;
+                    });
+                }
             }
         }
     });
 
-    let app_state_axum = app_state.clone();
-    let axum_task = tokio::spawn(async move {
-        let app = Router::new()
-            .route("/", get(index_handler))
-            .route("/ws", get(ws_handler))
-            .with_state(app_state_axum);
-        let listener = tokio::net::TcpListener::bind("0.0.0.0:11070").await.unwrap();
-        axum::serve(listener, app).await.unwrap();
-    });
+    // --- 5. SERVERS ---
+    let tx_ws = tx.clone();
+    let app = Router::new()
+        .route("/", get(|| async { Html(include_str!("index.html")) }))
+        .route("/ws", get(move |ws: WebSocketUpgrade| async move {
+            ws.on_upgrade(move |socket| handle_socket(socket, tx_ws))
+        }))
+        .with_state(app_state.clone());
 
-    let grpc_task = tokio::spawn(async move {
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:11070").await?;
+    info!("🚀 Observer UI: http://localhost:11070");
+    
+    let grpc_state = app_state.clone();
+    tokio::spawn(async move {
         let addr = "0.0.0.0:11071".parse().unwrap();
-        tonic::transport::Server::builder().add_service(ObserverServiceServer::new(app_state)).serve(addr).await.unwrap();
+        let _ = tonic::transport::Server::builder()
+            .add_service(ObserverServiceServer::new(grpc_state))
+            .serve(addr).await;
     });
 
-    let _ = tokio::join!(axum_task, grpc_task);
+    axum::serve(listener, app).await?;
     Ok(())
 }
 
-fn start_network_sniffer(tx: Arc<broadcast::Sender<String>>, node_name: String) {
-    info!("📡 [SNI] Global Network Sniffer initializing on 'any'...");
+fn start_smart_sniffer(tx: Arc<broadcast::Sender<String>>, node_name: String) {
+    let mut capture = Capture::from_device("any").unwrap().promisc(true).snaplen(65535).timeout(100).open().unwrap();
+    // Filtreyi ayarlıyoruz
+    let _ = capture.filter("udp and (port 5060 or portrange 13000-13100 or portrange 30000-60000)", true);
 
-    let cap = Capture::from_device("any")
-        .expect("Failed to find 'any' device")
-        .promisc(true)
-        .snaplen(65535)
-        .timeout(100) 
-        .open();
-
-    let mut capture = match cap {
-        Ok(c) => c,
-        Err(e) => {
-            error!("🚨 [SNI-FATAL] pcap activation failed: {}. Ensure root/CAP_NET_RAW.", e);
-            return;
-        }
-    };
-
-    // [GÜNCELLEME]: RTP Port aralığını (30000-60000) dinleme listesine ekle
-    // Filter: UDP ve (SIP Ports VEYA RTP Range)
-    let filter = "udp and (port 5060 or portrange 13000-13100 or portrange 30000-60000)";
-    
-    if let Err(e) = capture.filter(filter, true) {
-        error!("🚨 [SNI-FATAL] BPF filter error: {}", e);
-        return;
-    }
-
-    info!("📡 [SNI] Oracle Active: Capturing SIP & RTP traffic (Filter: {})...", filter);
-
-    let mut rtp_packet_counter = 0u64;
-    let mut last_rtp_log = Instant::now();
+    let mut rtp_count = 0u64;
+    // [FIX]: Hata veren değişken burada tanımlandı
+    let mut last_rtp_log = Instant::now(); 
+    let mut is_call_active = false;
 
     loop {
-        match capture.next_packet() {
-            Ok(packet) => {
-                let data = packet.data;
-                // Minimum UDP header (8) + RTP header (12) = 20 bytes
-                if data.len() < 20 { continue; }
+        if let Ok(packet) = capture.next_packet() {
+            let data = packet.data;
+            if data.len() < 12 { continue; }
 
-                // Ethernet/IP/UDP header offsetlerini atlayıp payload'a ulaşmak zor (Any device).
-                // Ancak basit bir heuristic kullanabiliriz:
-                // Metin (SIP) mi Binary (RTP) mi?
-                
-                // 1. SIP Kontrolü (Metin)
-                let text_preview = String::from_utf8_lossy(&data);
-                if let Some(idx) = find_sip_start(&text_preview) {
-                    let sip_content = &text_preview[idx..];
-                    
-                    // SIP Log
+            // --- 1. KATEGORİ BELİRLEME ---
+            let text = String::from_utf8_lossy(data);
+            let mut service_name = "SNIFFER-UDP"; 
+            let mut log_level = "DEBUG";
+
+            // A. SIP Tespiti
+            let is_sip = text.contains("INVITE") || text.contains("SIP/2.0") || text.contains("BYE") || text.contains("ACK");
+            
+            // B. RTP Tespiti (V2, Signature 0x80)
+            let is_rtp = (data[0] >> 6) == 2 && data.len() > 50;
+
+            // C. Keep-Alive / STUN
+            let is_keepalive = data.len() <= 4 || text.contains("STUN");
+
+            if is_sip {
+                service_name = "SNIFFER-SIP";
+                log_level = "TRACE";
+                if text.contains("INVITE") { is_call_active = true; }
+                if text.contains("BYE") { is_call_active = false; }
+            } else if is_rtp {
+                service_name = "SNIFFER-RTP";
+                rtp_count += 1;
+            } else if is_keepalive {
+                service_name = "SNIFFER-KEEP";
+                log_level = "DEBUG";
+            }
+
+            // --- 2. LOGLAMA MANTIĞI ---
+            
+            // SIP ve Keep-Alive anında basılır
+            if is_sip || is_keepalive {
+                 let entry = LogEntry {
+                    ts: chrono::Utc::now().to_rfc3339(),
+                    node: node_name.to_uppercase(),
+                    service: service_name.into(),
+                    level: log_level.into(),
+                    msg: if is_keepalive { "💤 UDP Keep-Alive".into() } else { text.trim().to_string() },
+                    source_type: "network".into(),
+                };
+                if let Ok(json_str) = serde_json::to_string(&entry) { let _ = tx.send(json_str); }
+            }
+
+            // RTP özetlenerek basılır
+            if is_rtp {
+                let threshold = if is_call_active { 2 } else { 30 };
+                // [FIX]: last_rtp_log burada kullanılıyor
+                if last_rtp_log.elapsed().as_secs() >= threshold {
                     let entry = LogEntry {
                         ts: chrono::Utc::now().to_rfc3339(),
                         node: node_name.to_uppercase(),
-                        service: "NETWORK-SNIFFER".into(),
-                        level: "TRACE".into(),
-                        msg: sip_content.to_string(),
+                        service: "SNIFFER-RTP".into(),
+                        level: "DEBUG".into(),
+                        msg: format!("🎵 RTP FLOW: {} pkts | State: {}", rtp_count, if is_call_active { "CALL_ACTIVE" } else { "IDLE" }),
                         source_type: "network".into(),
                     };
                     if let Ok(json_str) = serde_json::to_string(&entry) { let _ = tx.send(json_str); }
-                    continue;
+                    rtp_count = 0; 
+                    last_rtp_log = Instant::now();
                 }
-
-                // 2. RTP Kontrolü (Binary)
-                // Bu kısım "Any" interface'inde offset bulmak zor olduğu için %100 kesin değildir,
-                // ama trafik yoğunluğunu göstermek için yeterlidir.
-                // Basitçe, SIP olmayan ve boyutu makul (örn > 50 byte) her UDP paketini RTP adayı sayalım.
-                if data.len() > 50 {
-                    rtp_packet_counter += 1;
-
-                    // Her 200 pakette bir veya 2 saniyede bir log bas (Throttling)
-                    if rtp_packet_counter % 200 == 0 || last_rtp_log.elapsed().as_secs() >= 2 {
-                        let entry = LogEntry {
-                            ts: chrono::Utc::now().to_rfc3339(),
-                            node: node_name.to_uppercase(),
-                            service: "NETWORK-SNIFFER".into(),
-                            level: "DEBUG".into(), // TRACE yerine DEBUG
-                            msg: format!("📊 RTP TRAFFIC FLOW DETECTED: {} packets captured in interval.", rtp_packet_counter),
-                            source_type: "network".into(),
-                        };
-                        if let Ok(json_str) = serde_json::to_string(&entry) { let _ = tx.send(json_str); }
-                        
-                        rtp_packet_counter = 0;
-                        last_rtp_log = Instant::now();
-                    }
-                }
-            }
-            Err(pcap::Error::TimeoutExpired) => continue,
-            Err(e) => {
-                error!("🚨 [SNI] Capture loop error: {}", e);
-                break;
             }
         }
     }
-    warn!("🚨 [SNI] Network sniffer thread terminated.");
 }
 
-fn find_sip_start(text: &str) -> Option<usize> {
-    let keywords = ["INVITE ", "SIP/2.0 ", "ACK ", "BYE ", "REGISTER ", "OPTIONS ", "CANCEL "];
-    for kw in keywords {
-        if let Some(pos) = text.find(kw) { return Some(pos); }
-    }
-    None
-}
+async fn start_harvesting(docker: Arc<Docker>, tx: Arc<broadcast::Sender<String>>, container_id: String, node_name: String) {
+    let inspect = match docker.inspect_container(&container_id, None).await {
+        Ok(i) => i,
+        Err(_) => return,
+    };
+    let name = inspect.name.unwrap_or_default().replace("/", "");
+    if name.contains("observer") { return; }
 
-fn start_harvesting(docker: Arc<Docker>, tx: Arc<broadcast::Sender<String>>, container_id: String, self_id: String, node_name: String) {
-    if container_id.starts_with(&self_id) { return; }
+    info!("🚜 Harvesting started for: {}", name);
 
-    tokio::spawn(async move {
-        let inspect = match docker.inspect_container(&container_id, None).await {
-            Ok(i) => i,
-            Err(_) => return,
+    let mut stream = docker.logs(&container_id, Some(LogsOptions { 
+        follow: true, stdout: true, stderr: true, tail: "10", ..Default::default() 
+    }));
+
+    while let Some(Ok(log)) = stream.next().await {
+        let log_text = match log {
+            LogOutput::StdOut { message } => String::from_utf8_lossy(&message).to_string(),
+            LogOutput::StdErr { message } => String::from_utf8_lossy(&message).to_string(),
+            _ => continue,
         };
-        let name = inspect.name.unwrap_or_else(|| "unknown".into()).trim_start_matches('/').to_string();
-        let envs = inspect.config.and_then(|c| c.env).unwrap_or_default();
-        if envs.iter().any(|e| e.contains("SERVICE_IGNORE=true")) || name.contains("observer") { return; }
+        let clean = ANSI_REGEX.replace_all(&log_text, "").to_string();
+        if clean.trim().is_empty() { continue; }
 
-        let mut stream = docker.logs(&container_id, Some(LogsOptions {
-            follow: true, stdout: true, stderr: true, tail: "10", ..Default::default()
-        }));
-
-        while let Some(Ok(log)) = stream.next().await {
-            let log_text = match log {
-                LogOutput::StdOut { message } => String::from_utf8_lossy(&message).to_string(),
-                LogOutput::StdErr { message } => String::from_utf8_lossy(&message).to_string(),
-                _ => continue,
-            };
-            let clean = ANSI_REGEX.replace_all(&log_text, "").to_string();
-            if clean.trim().is_empty() { continue; }
-
-            let entry = LogEntry {
-                ts: chrono::Utc::now().to_rfc3339(),
-                node: node_name.clone().to_uppercase(),
-                service: name.to_uppercase(),
-                level: "INFO".into(),
-                msg: clean.trim().to_string(),
-                source_type: "docker".into(),
-            };
-
-            if let Ok(json_str) = serde_json::to_string(&entry) {
-                let _ = tx.send(json_str);
-            }
-        }
-    });
-}
-
-async fn index_handler() -> Html<&'static str> { Html(include_str!("index.html")) }
-
-async fn ws_handler(ws: WebSocketUpgrade, ax_state: axum::extract::State<AppState>) -> axum::response::Response {
-    ws.on_upgrade(move |socket| handle_socket(socket, ax_state.tx.clone()))
+        let entry = LogEntry {
+            ts: chrono::Utc::now().to_rfc3339(),
+            node: node_name.to_uppercase(),
+            service: name.to_uppercase(),
+            level: "INFO".into(),
+            msg: clean.trim().to_string(),
+            source_type: "docker".into(),
+        };
+        let _ = tx.send(serde_json::to_string(&entry).unwrap());
+    }
 }
 
 async fn handle_socket(mut socket: WebSocket, tx: Arc<broadcast::Sender<String>>) {
     let mut rx = tx.subscribe();
-    let mut heartbeat = tokio::time::interval(std::time::Duration::from_secs(30));
     loop {
-        tokio::select! {
-            msg_res = rx.recv() => {
-                match msg_res {
-                    Ok(msg) => if socket.send(WsMessage::Text(msg)).await.is_err() { break; },
-                    Err(_) => continue, 
-                }
-            },
-            _ = heartbeat.tick() => { if socket.send(WsMessage::Ping(vec![])).await.is_err() { break; } }
+        if let Ok(msg) = rx.recv().await {
+            if socket.send(WsMessage::Text(msg.into())).await.is_err() { break; }
         }
     }
 }

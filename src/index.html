@@ -3,484 +3,199 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SENTIRIC | COCKPIT PRO v3.7 (AI-EXPORT + PAUSE)</title>
-    <link rel="icon" href="data:;base64,iVBORw0KGgo=">
-    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <title>SENTIRIC | FLIGHT RECORDER v5.0</title>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;800&display=swap" rel="stylesheet">
     <style>
-        :root { 
-            --primary: #00ff9d; --bg: #050505; --panel: #0f0f0f; --text: #d0d0d0; 
-            --remote: #00d4ff; --mobile: #d900ff; --network: #ff00ff; --warn: #ffae00; --error: #ff4444; 
-            --sip: #00d4ff; --border: #222; 
+        :root {
+            --bg: #050505; --panel: #0f0f0f; --text: #c0c0c0; --border: #222;
+            --sip: #00d4ff; --rtp: #bd00ff; --sys: #00ff9d; --err: #ff4444; --warn: #ffae00;
         }
+        body { background: var(--bg); color: var(--text); font-family: 'JetBrains Mono', monospace; margin: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden; font-size: 12px; }
         
-        body { background: var(--bg); color: var(--text); font-family: 'JetBrains Mono', 'Fira Code', monospace; margin: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+        /* HEADER */
+        header { background: #000; height: 48px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; padding: 0 15px; }
+        .brand { font-weight: 800; letter-spacing: 1px; color: #fff; }
+        .brand span { color: var(--sys); }
+        .live-dot { height: 8px; width: 8px; background: var(--err); border-radius: 50%; display: inline-block; margin-right: 5px; }
+        .live-dot.on { background: var(--sys); box-shadow: 0 0 8px var(--sys); }
+
+        /* TOOLBAR */
+        #toolbar { background: var(--panel); padding: 8px 15px; border-bottom: 1px solid var(--border); display: flex; gap: 10px; align-items: center; }
+        .filter-group { display: flex; gap: 4px; padding-right: 10px; border-right: 1px solid #333; }
         
-        header { background: #000; padding: 0 20px; height: 55px; border-bottom: 1px solid var(--primary); display: flex; justify-content: space-between; align-items: center; z-index: 1000; }
-        .brand { font-weight: 900; letter-spacing: 2px; color: #fff; }
-        .brand span { color: var(--primary); }
-
-        #stats-bar { display: flex; gap: 15px; font-size: 11px; align-items: center; }
-        .stat-box { background: #111; border: 1px solid var(--border); padding: 4px 12px; border-radius: 4px; border-left: 3px solid var(--primary); }
-        .stat-val { font-weight: bold; color: #fff; margin-left: 5px; }
+        button { background: #1a1a1a; border: 1px solid #333; color: #777; padding: 4px 10px; font-family: inherit; font-size: 11px; cursor: pointer; border-radius: 3px; transition: 0.2s; }
+        button:hover { border-color: #555; color: #fff; }
+        button.active { background: #222; color: #fff; border-color: #555; font-weight: bold; }
         
-        #pause-indicator { 
-            background: var(--warn); 
-            color: #000; 
-            padding: 4px 12px; 
-            border-radius: 4px; 
-            font-size: 11px; 
-            font-weight: bold; 
-            margin-left: 10px;
-            display: none;
-            border: 1px solid #ffae00aa;
-            box-shadow: 0 0 10px rgba(255, 174, 0, 0.3);
-        }
-
-        #toolbar { background: var(--panel); padding: 10px 20px; border-bottom: 1px solid var(--border); display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
-        .filter-section { display: flex; gap: 6px; align-items: center; border-right: 1px solid #333; padding-right: 15px; }
-        .lbl { font-size: 10px; text-transform: uppercase; color: #555; font-weight: 800; }
-
-        .f-btn { background: #1a1a1a; border: 1px solid #333; color: #666; padding: 5px 12px; font-size: 11px; cursor: pointer; border-radius: 4px; transition: 0.2s; }
-        .f-btn.active { border-color: var(--primary); color: var(--primary); background: rgba(0, 255, 157, 0.08); }
-        .f-btn.active.n-network { border-color: var(--network); color: var(--network); background: rgba(255, 0, 255, 0.08); }
+        button.type-sip.active { border-color: var(--sip); color: var(--sip); background: rgba(0, 212, 255, 0.1); }
+        button.type-rtp.active { border-color: var(--rtp); color: var(--rtp); background: rgba(189, 0, 255, 0.1); }
+        button.type-sys.active { border-color: var(--sys); color: var(--sys); background: rgba(0, 255, 157, 0.1); }
         
-        .e-btn { background: #1a1a1a; border: 1px solid var(--warn); color: var(--warn); padding: 5px 12px; font-size: 11px; cursor: pointer; border-radius: 4px; font-weight: bold; }
-        .e-btn:hover { background: var(--warn); color: #000; }
+        .action-btn { border-color: var(--warn); color: var(--warn); font-weight: bold; margin-left: auto; }
+        .action-btn:hover { background: var(--warn); color: #000; }
 
-        #workspace { display: flex; flex: 1; overflow: hidden; }
-        #console { flex: 2; overflow-y: auto; padding: 15px; background: #080808; }
-        #diagram-panel { flex: 1.2; background: #0c0c0c; border-left: 1px solid var(--border); display: none; flex-direction: column; padding: 20px; overflow: auto; }
-
-        .line { margin-bottom: 4px; font-size: 12px; padding: 6px 10px; border-radius: 4px; border-left: 3px solid transparent; background: rgba(255,255,255,0.01); display: flex; gap: 12px; }
-        .line:hover { background: rgba(255,255,255,0.04); cursor: pointer; }
+        /* CONSOLE */
+        #console { flex: 1; overflow-y: auto; padding: 10px; scroll-behavior: smooth; }
+        .log-row { display: flex; gap: 10px; padding: 2px 4px; border-radius: 2px; font-size: 11px; line-height: 1.4; border-left: 2px solid transparent; }
+        .log-row:hover { background: rgba(255,255,255,0.03); }
         
-        .ts { color: #444; min-width: 65px; }
-        .node { min-width: 100px; font-weight: bold; font-size: 11px; }
-        .svc { color: #777; min-width: 130px; font-size: 11px; }
-        .msg { flex: 1; word-break: break-all; color: #bbb; }
+        .ts { min-width: 70px; color: #555; }
+        .svc { min-width: 120px; font-weight: bold; color: #777; }
+        .msg { flex: 1; white-space: pre-wrap; word-break: break-all; }
 
-        .l-local { border-left-color: var(--primary); }
-        .l-remote { border-left-color: var(--remote); }
-        .l-mobile { border-left-color: var(--mobile); }
-        .l-network { border-left-color: var(--network); background: rgba(255, 0, 255, 0.03); }
-        .l-error { border-left-color: var(--error); background: rgba(255, 68, 68, 0.1); color: #ffcece; }
+        /* Log Colors */
+        .row-sip { border-left-color: var(--sip); } .row-sip .svc { color: var(--sip); }
+        .row-rtp { border-left-color: var(--rtp); } .row-rtp .svc { color: var(--rtp); }
+        .row-sys { border-left-color: var(--sys); } .row-sys .svc { color: var(--sys); }
+        .row-err { border-left-color: var(--err); background: rgba(255, 68, 68, 0.05); } .row-err .msg { color: var(--err); }
+        .row-def .svc { color: #aaa; }
 
-        .sip-packet { background: rgba(0, 212, 255, 0.04); color: var(--remote); border-radius: 4px; padding: 10px; margin-top: 5px; border: 1px solid #00d4ff22; font-size: 11px; white-space: pre-wrap; }
-        .net-packet { background: rgba(255, 0, 255, 0.04); color: var(--network); border: 1px solid rgba(255, 0, 255, 0.2); }
-        .call-id { color: var(--warn); font-weight: bold; background: #2a1a00; padding: 1px 5px; border-radius: 3px; cursor: help; }
-        
-        .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 5px; background: #ff4444; }
-        .dot.online { background: var(--primary); box-shadow: 0 0 8px var(--primary); }
-
-        .buffer-badge {
-            background: var(--warn);
-            color: #000;
-            font-size: 10px;
-            padding: 2px 6px;
-            border-radius: 10px;
-            margin-left: 8px;
-            font-weight: bold;
-        }
     </style>
 </head>
 <body>
     <header>
-        <div class="brand">SENTIRIC <span>COCKPIT</span> <small>v3.7 PAUSE-BUFFER</small></div>
-        <div id="stats-bar">
-            <div class="stat-box">MB-RX<span id="v-rx" class="stat-val">0</span></div>
-            <div class="stat-box">MB-TX<span id="v-tx" class="stat-val">0</span></div>
-            <div id="ws-status">
-                <span id="status-dot" class="dot"></span> 
-                <span id="status-text">OFFLINE</span>
-            </div>
-            <div id="pause-indicator">⏸️ PAUSED</div>
+        <div class="brand">SENTIRIC <span>FLIGHT RECORDER</span></div>
+        <div style="font-size:10px; color:#555;">
+            <span id="status-dot" class="live-dot"></span> <span id="status-txt">OFFLINE</span>
+            | BUFFER: <span id="buf-len">0</span>
         </div>
     </header>
 
     <div id="toolbar">
-        <div class="filter-section">
-            <span class="lbl">Nodes</span>
-            <div id="filter-nodes" style="display:flex; gap:5px;"></div>
-        </div>
-        <div class="filter-section">
-            <span class="lbl">Services</span>
-            <div id="filter-services" style="display:flex; gap:5px;"></div>
-        </div>
-        <div class="filter-section">
-            <input type="text" id="search" placeholder="Search Call-ID..." oninput="refreshView()">
-            <button class="f-btn" onclick="clearDb()" style="color:var(--error)">PURGE</button>
-        </div>
+        <!-- Otomatik Oluşan Butonlar Buraya -->
+        <div id="dynamic-filters" class="filter-group"></div>
         
-        <!-- YENİ: PAUSE BUTONU -->
-        <div class="filter-section" style="border-left: 1px solid #333; padding-left: 15px;">
-            <span class="lbl" style="color:var(--primary)">CONTROL</span>
-            <button id="pauseBtn" class="f-btn" onclick="togglePause()" style="min-width: 80px;">⏸️ PAUSE</button>
-            <span id="bufferCount" class="buffer-badge" style="display: none;">0</span>
+        <!-- Sabit Kontroller -->
+        <div class="filter-group">
+            <button onclick="togglePause()" id="btn-pause">PAUSE</button>
+            <button onclick="clearLogs()">CLEAR</button>
         </div>
 
-        <!-- EXPORT SECTION -->
-        <div class="filter-section" style="border:none">
-            <span class="lbl" style="color:var(--warn)">AI TOOLS</span>
-            <button class="e-btn" onclick="exportJson()">JSON DUMP</button>
-            <button class="e-btn" onclick="exportReport()">REPORT (MD)</button>
-        </div>
+        <button class="action-btn" onclick="downloadJson()">⬇ DOWNLOAD JSON</button>
     </div>
 
-    <div id="workspace">
-        <div id="console"></div>
-        <div id="diagram-panel">
-            <div style="display:flex; justify-content:space-between; margin-bottom:15px;">
-                <b>SEQUENCE ANALYZER</b>
-                <button class="f-btn" onclick="document.getElementById('diagram-panel').style.display='none'">CLOSE</button>
-            </div>
-            <div id="mermaid-chart"></div>
-        </div>
-    </div>
+    <div id="console"></div>
 
     <script>
-        mermaid.initialize({ startOnLoad: false, theme: 'dark' });
         const consoleEl = document.getElementById('console');
-        const statusDot = document.getElementById('status-dot');
-        const pauseIndicator = document.getElementById('pause-indicator');
-        const pauseBtn = document.getElementById('pauseBtn');
-        const bufferCountEl = document.getElementById('bufferCount');
+        const filterContainer = document.getElementById('dynamic-filters');
         
-        let logs = [];
+        let allLogs = []; // Tüm logları hafızada tut (Export için)
         let isPaused = false;
-        let pausedBuffer = []; // YENİ: Buffer array'i
-        let knownNodes = new Set();
-        let knownServices = new Set();
-        let activeNodes = new Set();
-        let activeServices = new Set();
+        let activeServices = new Set(); // Hangi servisler görünür?
+        let knownServices = new Set();  // Hangi servisleri tanıdık?
 
-        const dbName = "SentiricCockpitDB";
-        let db;
-        const dbReq = indexedDB.open(dbName, 1);
-        dbReq.onupgradeneeded = (e) => e.target.result.createObjectStore("logs", { autoIncrement: true });
-        dbReq.onsuccess = (e) => { db = e.target.result; loadHistory(); };
-
+        // WebSocket Bağlantısı
         const ws = new WebSocket(`ws://${window.location.host}/ws`);
-        ws.onopen = () => { 
-            statusDot.className = 'dot online'; 
-            document.getElementById('status-text').innerText = 'LIVE'; 
-        };
         
-        // GÜNCELLENMİŞ: Pause kontrollü message handler
-        ws.onmessage = (e) => { 
-            try { 
-                const entry = JSON.parse(e.data);
-                
-                if (isPaused) {
-                    // Pause durumunda buffer'a ekle
-                    pausedBuffer.push(entry);
-                    
-                    // Buffer çok büyümesin (max 2000)
-                    if (pausedBuffer.length > 2000) {
-                        pausedBuffer.shift();
-                    }
-                    
-                    // Buffer sayacını güncelle
-                    updateBufferCounter();
-                } else {
-                    // Normal akışta direkt işle
-                    processEntry(entry, true);
-                }
-            } catch(err){} 
+        ws.onopen = () => {
+            document.getElementById('status-dot').classList.add('on');
+            document.getElementById('status-txt').innerText = "CONNECTED";
         };
 
-        // YENİ: Buffer sayacını güncelle
-        function updateBufferCounter() {
-            if (pausedBuffer.length > 0) {
-                bufferCountEl.style.display = 'inline-block';
-                bufferCountEl.textContent = pausedBuffer.length;
-            } else {
-                bufferCountEl.style.display = 'none';
-            }
+        ws.onmessage = (event) => {
+            if (isPaused) return;
+            try {
+                const entry = JSON.parse(event.data);
+                allLogs.push(entry);
+                if (allLogs.length > 5000) allLogs.shift(); // Hafıza koruması
+                document.getElementById('buf-len').innerText = allLogs.length;
+                
+                registerService(entry.service);
+                
+                // Eğer filtresi aktifse ekrana bas
+                if (activeServices.has(entry.service)) {
+                    renderRow(entry);
+                }
+            } catch (e) { console.error(e); }
+        };
+
+        function registerService(svcName) {
+            if (knownServices.has(svcName)) return;
+            knownServices.add(svcName);
+            
+            // Varsayılan olarak hepsini aktif et
+            activeServices.add(svcName);
+
+            const btn = document.createElement('button');
+            btn.innerText = svcName;
+            btn.className = 'active';
+            
+            // Özel Stil Atamaları
+            if (svcName.includes('SIP')) btn.classList.add('type-sip');
+            else if (svcName.includes('RTP')) btn.classList.add('type-rtp');
+            else if (svcName.includes('SYSTEM')) btn.classList.add('type-sys');
+
+            btn.onclick = () => {
+                if (activeServices.has(svcName)) {
+                    activeServices.delete(svcName);
+                    btn.classList.remove('active');
+                } else {
+                    activeServices.add(svcName);
+                    btn.classList.add('active');
+                }
+                // Ekranı tazele (Filtre değiştiği için)
+                redrawConsole();
+            };
+            filterContainer.appendChild(btn);
         }
 
-        // YENİ: Pause toggle fonksiyonu
+        function renderRow(entry) {
+            const div = document.createElement('div');
+            let cssClass = 'row-def';
+            
+            if (entry.service === 'SNIFFER-SIP') cssClass = 'row-sip';
+            else if (entry.service === 'SNIFFER-RTP') cssClass = 'row-rtp';
+            else if (entry.service === 'SYSTEM') cssClass = 'row-sys';
+            else if (entry.level === 'ERROR') cssClass = 'row-err';
+
+            div.className = `log-row ${cssClass}`;
+            
+            // Timestamp formatla (HH:MM:SS)
+            const time = entry.ts.split('T')[1].split('.')[0];
+            
+            div.innerHTML = `
+                <div class="ts">${time}</div>
+                <div class="svc">${entry.service}</div>
+                <div class="msg">${entry.msg}</div>
+            `;
+            
+            consoleEl.appendChild(div);
+            
+            // Otomatik kaydır
+            if (consoleEl.childElementCount > 1000) consoleEl.removeChild(consoleEl.firstChild);
+            consoleEl.scrollTop = consoleEl.scrollHeight;
+        }
+
+        function redrawConsole() {
+            consoleEl.innerHTML = '';
+            // Hafızadaki son 1000 logu filtreye göre yeniden çiz
+            const slice = allLogs.slice(-1000);
+            slice.forEach(entry => {
+                if (activeServices.has(entry.service)) renderRow(entry);
+            });
+        }
+
         function togglePause() {
             isPaused = !isPaused;
-            
-            if (isPaused) {
-                pauseBtn.innerHTML = '▶️ RESUME';
-                pauseBtn.style.color = 'var(--warn)';
-                pauseBtn.style.borderColor = 'var(--warn)';
-                pauseIndicator.style.display = 'inline-block';
-            } else {
-                pauseBtn.innerHTML = '⏸️ PAUSE';
-                pauseBtn.style.color = '';
-                pauseBtn.style.borderColor = '';
-                pauseIndicator.style.display = 'none';
-                
-                // RESUME: Buffer'daki tüm logları işle
-                if (pausedBuffer.length > 0) {
-                    // Buffer boyutunu göster
-                    const bufferSize = pausedBuffer.length;
-                    
-                    // Buffer'daki her entry'i işle
-                    pausedBuffer.forEach(entry => processEntry(entry, true));
-                    
-                    // Buffer'ı temizle
-                    pausedBuffer = [];
-                    updateBufferCounter();
-                    
-                    // Kullanıcıya bildirim (konsolda görünsün diye bir log ekle)
-                    const notification = {
-                        ts: new Date().toISOString(),
-                        node: 'SYSTEM',
-                        service: 'COCKPIT',
-                        level: 'INFO',
-                        msg: `📦 Buffer'dan ${bufferSize} log yüklendi`,
-                        source_type: 'system'
-                    };
-                    processEntry(notification, false); // DB'ye kaydetme
-                }
-            }
+            document.getElementById('btn-pause').innerText = isPaused ? "RESUME" : "PAUSE";
+            document.getElementById('btn-pause').style.color = isPaused ? "var(--warn)" : "";
         }
 
-        function processEntry(entry, saveToDb) {
-            // Node ve Service kontrolleri
-            if (!knownNodes.has(entry.node)) {
-                knownNodes.add(entry.node); 
-                activeNodes.add(entry.node);
-                createFilterBtn('filter-nodes', entry.node, 'node');
-            }
-            if (!knownServices.has(entry.service)) {
-                knownServices.add(entry.service); 
-                activeServices.add(entry.service);
-                createFilterBtn('filter-services', entry.service, 'svc');
-            }
-            
-            // Log'u array'e ekle
-            logs.push(entry);
-            if (logs.length > 5000) logs.shift(); // Limit 5000
-            
-            // DB'ye kaydet (saveToDb true ise)
-            if (saveToDb && db) {
-                try {
-                    db.transaction("logs", "readwrite").objectStore("logs").add(entry);
-                } catch (e) {
-                    console.warn('DB save error:', e);
-                }
-            }
-            
-            // UI'da göster (aktif filtreler ve search'e göre)
-            renderLine(entry);
+        function clearLogs() {
+            consoleEl.innerHTML = '';
+            // Hafızayı silmiyoruz, sadece ekranı temizliyoruz.
+            // Tam reset için: allLogs = [];
         }
 
-        function renderLine(entry) {
-            if (!activeNodes.has(entry.node) || !activeServices.has(entry.service)) return;
-            
-            const search = document.getElementById('search').value.toLowerCase();
-            if (search && !JSON.stringify(entry).toLowerCase().includes(search)) return;
-
-            // RTP Stats özel işleme
-            if (entry.msg.includes("RtpStats")) {
-                const rx = entry.msg.match(/rx_cnt: (\d+)/)?.[1] || "0";
-                const tx = entry.msg.match(/tx_cnt: (\d+)/)?.[1] || "0";
-                document.getElementById('v-rx').innerText = rx;
-                document.getElementById('v-tx').innerText = tx;
-                return;
-            }
-
-            const row = document.createElement('div');
-            let typeClass = entry.source_type === 'network' ? 'l-network' : 
-                           (entry.node.includes('GCP') ? 'l-remote' : 'l-local');
-            if (entry.level === 'ERROR' || entry.msg.includes('Error') || entry.msg.includes('Fail')) {
-                typeClass = 'l-error';
-            }
-            
-            row.className = `line ${typeClass}`;
-
-            let displayMsg = entry.msg.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-            displayMsg = displayMsg.replace(/(uac-[a-f0-9]+)/g, '<span class="call-id" onclick="focusCall(\'$1\')">$1</span>');
-
-            if (entry.source_type === 'network' || displayMsg.includes("INVITE") || displayMsg.includes("200 OK") || displayMsg.includes("SIP/2.0")) {
-                let subClass = entry.source_type === 'network' ? 'net-packet' : '';
-                displayMsg = `<div class="sip-packet ${subClass}">${displayMsg}</div>`;
-            }
-
-            row.innerHTML = `
-                <div class="ts">${entry.ts.split('T')[1].split('.')[0]}</div>
-                <div class="node">${entry.node}</div>
-                <div class="svc">${entry.source_type === 'network' ? '📡 SNIFFER' : entry.service}</div>
-                <div class="msg">${displayMsg}</div>
-            `;
-            consoleEl.appendChild(row);
-            consoleEl.scrollTop = consoleEl.scrollHeight;
-            if (consoleEl.childElementCount > 1000) consoleEl.removeChild(consoleEl.firstChild);
-        }
-
-        function createFilterBtn(containerId, name, type) {
-            const btn = document.createElement('button');
-            btn.innerText = name;
-            btn.className = `f-btn active ${name === 'NETWORK-SNIFFER' ? 'n-network' : ''}`;
-            btn.onclick = () => {
-                const set = type === 'node' ? activeNodes : activeServices;
-                set.has(name) ? set.delete(name) : set.add(name);
-                btn.classList.toggle('active');
-                refreshView();
-            };
-            document.getElementById(containerId).appendChild(btn);
-        }
-
-        function focusCall(id) {
-            document.getElementById('search').value = id;
-            refreshView();
-            document.getElementById('diagram-panel').style.display = 'flex';
-            generateFlow(id);
-        }
-
-        function generateFlow(callId) {
-            let diag = "sequenceDiagram\nautonumber\n";
-            logs.filter(l => JSON.stringify(l).includes(callId)).forEach(l => {
-                let msg = "";
-                if(l.msg.includes("INVITE")) msg = "INVITE";
-                else if(l.msg.includes("100 Trying")) msg = "100 Trying";
-                else if(l.msg.includes("180 Ringing")) msg = "180 Ringing";
-                else if(l.msg.includes("200 OK")) msg = "200 OK";
-                else if(l.msg.includes("ACK")) msg = "ACK";
-                else if(l.msg.includes("BYE")) msg = "BYE";
-                
-                if (!msg) return;
-                
-                let src = l.source_type === 'network' ? "NETWORK" : l.service.replace("-SERVICE", "");
-                let dst = l.source_type === 'network' ? "SBC/CORE" : "NETWORK";
-                
-                if (l.service === 'SBC-SERVICE') { src = 'SBC'; dst = 'CORE'; }
-                if (l.service === 'PROXY-SERVICE') { src = 'PROXY'; dst = 'DIALPLAN/B2BUA'; }
-                if (l.service === 'MOBILE-SDK') { src = 'MOBILE'; dst = 'NETWORK'; }
-
-                diag += `${src}->>${dst}: ${msg}\n`;
-            });
-            const el = document.getElementById('mermaid-chart');
-            el.removeAttribute('data-processed');
-            el.innerHTML = diag;
-            mermaid.init(undefined, el);
-        }
-
-        function loadHistory() {
-            const store = db.transaction("logs", "readonly").objectStore("logs");
-            store.openCursor(null, 'prev').onsuccess = (e) => {
-                const cursor = e.target.result;
-                if (cursor && logs.length < 2000) { 
-                    logs.unshift(cursor.value); 
-                    cursor.continue(); 
-                }
-                else { 
-                    refreshView(); 
-                }
-            };
-        }
-
-        function clearDb() { 
-            if(confirm("Clear local DB?")) { 
-                db.transaction("logs", "readwrite").objectStore("logs").clear(); 
-                location.reload(); 
-            } 
-        }
-        
-        function refreshView() { 
-            consoleEl.innerHTML = ""; 
-            logs.forEach(renderLine); 
-        }
-
-        // ==========================================
-        // 📤 EXPORT ENGINE (AI-READY)
-        // ==========================================
-
-        function downloadFile(content, fileName, mimeType) {
-            const blob = new Blob([content], { type: mimeType });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = fileName;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-        }
-
-        function exportJson() {
-            const jsonStr = JSON.stringify(logs, null, 2);
-            downloadFile(jsonStr, `sentiric_logs_${new Date().toISOString()}.json`, "application/json");
-        }
-
-        function exportReport() {
-            let md = `# 🕵️ SENTIRIC DIAGNOSTIC REPORT\n`;
-            md += `**Date:** ${new Date().toISOString()}\n`;
-            md += `**Total Logs:** ${logs.length}\n`;
-            md += `**Nodes:** ${Array.from(knownNodes).join(', ')}\n\n`;
-
-            const errors = logs.filter(l => l.level === 'ERROR' || l.msg.includes("Error") || l.msg.includes("Fail"));
-            if (errors.length > 0) {
-                md += `## 🚨 ERROR SUMMARY (${errors.length})\n`;
-                errors.forEach(e => {
-                    md += `- [${e.ts}] **${e.service}**: ${e.msg.substring(0, 150)}...\n`;
-                });
-                md += `\n`;
-            }
-
-            const callIds = new Set();
-            const sipRegex = /Call-ID: ([\w-]+)/;
-            logs.forEach(l => {
-                const match = l.msg.match(sipRegex);
-                if (match) callIds.add(match[1]);
-                if (l.call_id) callIds.add(l.call_id);
-            });
-
-            if (callIds.size > 0) {
-                md += `## 📞 SIP CALL ANALYSIS\n`;
-                callIds.forEach(cid => {
-                    md += `### Call-ID: \`${cid}\`\n`;
-                    
-                    const callLogs = logs.filter(l => JSON.stringify(l).includes(cid));
-                    
-                    if (callLogs.length > 0) {
-                        const start = new Date(callLogs[0].ts);
-                        const end = new Date(callLogs[callLogs.length-1].ts);
-                        const duration = (end - start) / 1000;
-                        md += `- **Duration:** ${duration}s\n`;
-                    }
-
-                    md += `\n\`\`\`mermaid\nsequenceDiagram\nautonumber\n`;
-                    callLogs.forEach(l => {
-                        let msgShort = "MSG";
-                        if(l.msg.includes("INVITE")) msgShort = "INVITE";
-                        else if(l.msg.includes("200 OK")) msgShort = "200 OK";
-                        else if(l.msg.includes("ACK")) msgShort = "ACK";
-                        else if(l.msg.includes("BYE")) msgShort = "BYE";
-                        else if(l.msg.includes("100 Trying")) msgShort = "100 Trying";
-                        
-                        if (msgShort === "MSG") return;
-
-                        let src = l.service.replace("-SERVICE", "").replace("MOBILE-SDK", "MOBILE");
-                        if (l.source_type === 'network') src = "NETWORK";
-                        
-                        let dst = "?";
-                        if (src === "MOBILE") dst = "SBC";
-                        else if (src === "SBC") dst = "PROXY";
-                        else if (src === "PROXY") dst = "CORE";
-                        else dst = "SYSTEM";
-
-                        md += `${src}->>${dst}: ${msgShort}\n`;
-                    });
-                    md += `\`\`\`\n\n`;
-
-                    const sdpLogs = callLogs.filter(l => l.msg.includes("m=audio"));
-                    if (sdpLogs.length > 0) {
-                        md += `#### 📡 SDP Negotiation Highlights\n`;
-                        sdpLogs.forEach(l => {
-                            const audioLine = l.msg.match(/m=audio.*/)?.[0] || "";
-                            const ipLine = l.msg.match(/c=IN IP4.*/)?.[0] || "";
-                            md += `- **${l.service}**: \`${audioLine}\` | \`${ipLine}\`\n`;
-                        });
-                    }
-                    md += `\n---\n`;
-                });
-            }
-
-            downloadFile(md, `sentiric_report_${new Date().toISOString()}.md`, "text/markdown");
+        function downloadJson() {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(allLogs, null, 2));
+            const downloadAnchorNode = document.createElement('a');
+            downloadAnchorNode.setAttribute("href", dataStr);
+            downloadAnchorNode.setAttribute("download", `sentiric_logs_${new Date().toISOString()}.json`);
+            document.body.appendChild(downloadAnchorNode); // Firefox için gerekli
+            downloadAnchorNode.click();
+            downloadAnchorNode.remove();
         }
     </script>
 </body>
