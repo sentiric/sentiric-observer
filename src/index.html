@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SENTIRIC | TELEMETRY v2.0</title>
+    <title>SENTIRIC | TELEMETRY v2.1</title>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;800&display=swap" rel="stylesheet">
     <style>
         :root {
             --bg: #050505; --panel: #0f0f0f; --text: #c0c0c0; --border: #222;
             --sip: #00d4ff; --rtp: #bd00ff; --sys: #00ff9d; --err: #ff4444; --warn: #ffae00;
-            --node-tag: #444;
+            --net: #5865F2; --app: #23a559;
         }
         body { background: var(--bg); color: var(--text); font-family: 'JetBrains Mono', monospace; margin: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden; font-size: 12px; }
         
@@ -19,12 +19,20 @@
         .live-dot { height: 8px; width: 8px; background: var(--err); border-radius: 50%; display: inline-block; margin-right: 5px; }
         .live-dot.on { background: var(--sys); box-shadow: 0 0 8px var(--sys); }
 
-        #toolbar { background: var(--panel); padding: 8px 15px; border-bottom: 1px solid var(--border); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-        .filter-group { display: flex; gap: 4px; padding-right: 10px; border-right: 1px solid #333; }
+        /* TOOLBAR GÜNCELLENDİ */
+        #toolbar { background: var(--panel); padding: 8px 15px; border-bottom: 1px solid var(--border); display: flex; gap: 15px; align-items: center; flex-wrap: wrap; }
+        .section-label { font-size: 10px; font-weight: bold; color: #555; margin-right: 5px; text-transform: uppercase; }
+        .filter-group { display: flex; gap: 4px; padding-right: 10px; border-right: 1px solid #333; align-items: center; }
         
         button { background: #1a1a1a; border: 1px solid #333; color: #777; padding: 4px 10px; font-family: inherit; font-size: 11px; cursor: pointer; border-radius: 3px; transition: 0.2s; }
         button:hover { border-color: #555; color: #fff; }
+        
+        /* Aktif Buton Stilleri */
         button.active { background: #222; color: #fff; border-color: #555; font-weight: bold; }
+        
+        /* Özel Renkler */
+        button.cat-net.active { border-color: var(--net); color: var(--net); background: rgba(88, 101, 242, 0.1); }
+        button.cat-app.active { border-color: var(--app); color: var(--app); background: rgba(35, 165, 89, 0.1); }
         
         .action-btn { border-color: var(--warn); color: var(--warn); font-weight: bold; margin-left: auto; }
         .action-btn:hover { background: var(--warn); color: #000; }
@@ -34,8 +42,8 @@
         .log-row:hover { background: rgba(255,255,255,0.03); }
         
         .ts { min-width: 65px; color: #555; font-size: 10px; }
-        .node { min-width: 100px; color: #888; font-weight: bold; background: #111; padding: 1px 4px; border-radius: 3px; text-align: center; }
-        .svc { min-width: 120px; font-weight: bold; color: #777; }
+        .node { min-width: 100px; color: #666; font-weight: bold; background: #111; padding: 1px 4px; border-radius: 3px; text-align: center; font-size: 10px; }
+        .svc { min-width: 140px; font-weight: bold; color: #777; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .msg { flex: 1; white-space: pre-wrap; word-break: break-all; }
 
         /* Log Colors */
@@ -56,7 +64,16 @@
     </header>
 
     <div id="toolbar">
-        <div id="dynamic-filters" class="filter-group"></div>
+        <div class="filter-group">
+            <span class="section-label">APPS</span>
+            <div id="filters-app" style="display:flex; gap:4px;"></div>
+        </div>
+        
+        <div class="filter-group">
+            <span class="section-label">NETWORK</span>
+            <div id="filters-net" style="display:flex; gap:4px;"></div>
+        </div>
+
         <div class="filter-group">
             <button onclick="togglePause()" id="btn-pause">PAUSE</button>
             <button onclick="clearLogs()">CLEAR</button>
@@ -68,7 +85,8 @@
 
     <script>
         const consoleEl = document.getElementById('console');
-        const filterContainer = document.getElementById('dynamic-filters');
+        const filtersApp = document.getElementById('filters-app');
+        const filtersNet = document.getElementById('filters-net');
         
         let allLogs = []; 
         let isPaused = false;
@@ -87,14 +105,14 @@
             try {
                 const entry = JSON.parse(event.data);
                 
-                // OTEL Mapping: JSON yapısını UI için düzleştiriyoruz
+                // OTEL Mapping
                 const uiLog = {
                     ts: entry.Timestamp || new Date().toISOString(),
                     node: entry.Resource?.["host.name"] || "UNKNOWN",
                     service: entry.Resource?.["service.name"] || "UNKNOWN",
                     level: entry.SeverityText || "INFO",
                     msg: entry.Body || "",
-                    raw: entry // İndirmek için ham veriyi sakla
+                    raw: entry
                 };
 
                 allLogs.push(uiLog);
@@ -110,22 +128,31 @@
         function registerService(svcName) {
             if (knownServices.has(svcName)) return;
             knownServices.add(svcName);
-            activeServices.add(svcName);
+
+            // Kategori Belirleme
+            const isNetwork = svcName.includes('SNIFFER');
+            const targetContainer = isNetwork ? filtersNet : filtersApp;
+            const btnClass = isNetwork ? 'cat-net' : 'cat-app';
+
+            // Varsayılan Durum: RTP hariç hepsi açık
+            const isDefaultActive = !svcName.includes('SNIFFER-RTP'); 
+            if (isDefaultActive) activeServices.add(svcName);
 
             const btn = document.createElement('button');
-            btn.innerText = svcName;
-            btn.className = 'active';
+            btn.innerText = svcName.replace("SENTIRIC-", "").replace("SNIFFER-", ""); // Butonlarda kısa isim
+            btn.className = isDefaultActive ? `active ${btnClass}` : btnClass;
+            
             btn.onclick = () => {
                 if (activeServices.has(svcName)) {
                     activeServices.delete(svcName);
-                    btn.classList.remove('active');
+                    btn.className = btnClass;
                 } else {
                     activeServices.add(svcName);
-                    btn.classList.add('active');
+                    btn.className = `active ${btnClass}`;
                 }
                 redrawConsole();
             };
-            filterContainer.appendChild(btn);
+            targetContainer.appendChild(btn);
         }
 
         function renderRow(entry) {
@@ -140,10 +167,12 @@
             div.className = `log-row ${cssClass}`;
             const time = entry.ts.split('T')[1].split('.')[0];
             
-            // NODE Sütunu Eklendi
+            // Node ismini kısalt (SENTIRIC-ANT-PROD-02 -> ANT-PROD-02)
+            const shortNode = entry.node.replace("SENTIRIC-", "");
+
             div.innerHTML = `
                 <div class="ts">${time}</div>
-                <div class="node">${entry.node}</div>
+                <div class="node">${shortNode}</div>
                 <div class="svc">${entry.service}</div>
                 <div class="msg">${entry.msg}</div>
             `;
@@ -169,7 +198,6 @@
         function clearLogs() { consoleEl.innerHTML = ''; }
 
         function downloadJson() {
-            // İndirirken raw OTEL formatını indir
             const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(allLogs.map(l => l.raw), null, 2));
             const a = document.createElement('a');
             a.href = dataStr;
