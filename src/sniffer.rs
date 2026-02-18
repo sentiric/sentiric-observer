@@ -1,7 +1,7 @@
 use pcap::{Capture, Device};
-use std::sync::Arc;
+// [FIX] unused Arc kaldırıldı.
 use tokio::sync::broadcast::Sender;
-use tracing::{info, error};
+use tracing::info; // [FIX] unused error kaldırıldı.
 use serde_json::json;
 use crate::model::{OtelLogRecord, OtelResource};
 
@@ -26,18 +26,15 @@ impl RtpSniffer {
             let mut cap = Capture::from_device(device)
                 .unwrap()
                 .promisc(true)
-                .snaplen(64) // Sadece headerlar için küçük tutuyoruz (Performans!)
+                .snaplen(64)
                 .timeout(1000)
                 .open()
                 .unwrap();
 
-            // Sadece RTP port aralıklarını filtrele (GCP ve Core)
             let filter = "udp portrange 30000-30100 or portrange 50000-50100";
             cap.filter(filter, true).unwrap();
 
             while let Ok(packet) = cap.next_packet() {
-                // Her paket için log üretmek yerine her 50 pakette bir "Flow OK" bas
-                // (Burada gerçek zamanlı PPS hesabı da yapılabilir)
                 let record = OtelLogRecord {
                     timestamp: chrono::Utc::now().to_rfc3339(),
                     severity_text: "DEBUG".into(),
@@ -46,11 +43,12 @@ impl RtpSniffer {
                         service_name: "network-sniffer".into(),
                         host_name: host.clone(),
                     },
-                    attributes: Some(json!({
+                    // [FIX]: attributes artık Value bekliyor, Some(Value) değil.
+                    attributes: json!({
                         "event": "RTP_FLOW",
                         "packet_len": packet.header.len,
                         "flow_status": "ACTIVE"
-                    })),
+                    }),
                 };
 
                 if let Ok(json_str) = serde_json::to_string(&record) {

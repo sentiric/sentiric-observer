@@ -76,7 +76,7 @@ impl DockerHarvester {
                 follow: true,
                 stdout: true,
                 stderr: true,
-                tail: "10".into(), // Son 10 satırdan başla
+                tail: "10".into(),
                 ..Default::default()
             };
 
@@ -86,18 +86,14 @@ impl DockerHarvester {
                 match log_result {
                     Ok(log_output) => {
                         let msg = log_output.to_string();
-                        // ANSI kodlarını temizle
                         let clean_msg = ANSI_REGEX.replace_all(&msg, "").to_string();
                         if clean_msg.trim().is_empty() { continue; }
 
-                        // JSON Parse Denemesi
                         let otel_record = match serde_json::from_str::<serde_json::Value>(&clean_msg) {
                             Ok(json_val) => {
-                                // Eğer zaten bizim formatımızdaysa (STS v2.0)
                                 if json_val.get("Timestamp").is_some() && json_val.get("Body").is_some() {
                                     serde_json::to_string(&json_val).unwrap_or_default()
                                 } else {
-                                    // Başka bir JSON ise sar sarmala
                                     let record = OtelLogRecord {
                                         timestamp: chrono::Utc::now().to_rfc3339(),
                                         severity_text: json_val.get("level").and_then(|v| v.as_str()).unwrap_or("INFO").to_uppercase(),
@@ -106,13 +102,14 @@ impl DockerHarvester {
                                             service_name: service_name.clone(),
                                             host_name: host.clone(),
                                         },
-                                        attributes: Some(json_val),
+                                        // [FIX]: attributes direkt Value alır
+                                        attributes: json_val, 
                                     };
                                     serde_json::to_string(&record).unwrap_or_default()
                                 }
                             },
                             Err(_) => {
-                                // Düz Metin (Legacy Loglar)
+                                // [FIX]: model.rs içine new_raw eklediğimiz için artık çalışır
                                 let record = OtelLogRecord::new_raw(
                                     service_name.clone(),
                                     host.clone(),
@@ -122,12 +119,11 @@ impl DockerHarvester {
                             }
                         };
 
-                        // WebSocket kanalına bas
                         if !otel_record.is_empty() {
                             let _ = tx.send(otel_record);
                         }
                     }
-                    Err(_) => break, // Stream koptu
+                    Err(_) => break,
                 }
             }
             warn!("🔌 Log akışı koptu: {}", service_name);

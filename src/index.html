@@ -1,110 +1,189 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="tr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sentiric Panopticon</title>
+    <title>SENTIRIC PANOPTICON v3.0</title>
     <style>
-        :root { --bg: #0d1117; --text: #c9d1d9; --panel: #161b22; --border: #30363d; }
-        body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', monospace; margin: 0; display: flex; flex-direction: column; height: 100vh; }
+        :root {
+            --bg: #0a0c10; --panel: #12151a; --border: #2d333b;
+            --text: #adbac7; --blue: #539bf5; --green: #57ab5a;
+            --red: #f47067; --orange: #f69d50; --purple: #b083f0;
+        }
+        body { background: var(--bg); color: var(--text); font-family: 'Inter', -apple-system, monospace; margin: 0; overflow: hidden; display: flex; flex-direction: column; height: 100vh; }
         
-        header { background: var(--panel); padding: 15px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
-        h1 { margin: 0; font-size: 18px; color: #58a6ff; }
-        
-        #controls { display: flex; gap: 10px; }
-        button { background: #21262d; border: 1px solid var(--border); color: white; padding: 5px 10px; cursor: pointer; border-radius: 4px; }
-        button:hover { background: #30363d; }
-        button.active { background: #1f6feb; border-color: #58a6ff; }
+        /* Dashboard Header */
+        header { background: var(--panel); border-bottom: 1px solid var(--border); padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; }
+        .node-capsule { display: flex; gap: 10px; }
+        .badge { padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; text-transform: uppercase; border: 1px solid var(--border); }
+        .badge-node { background: rgba(83, 155, 245, 0.1); color: var(--blue); }
+        .badge-rtp { background: rgba(176, 131, 240, 0.1); color: var(--purple); }
 
-        #logs { flex: 1; overflow-y: auto; padding: 10px; font-size: 13px; line-height: 1.4; }
-        .log-entry { display: flex; gap: 10px; padding: 4px; border-bottom: 1px solid #21262d; }
-        .log-entry:hover { background: #161b22; }
-        
-        .ts { color: #8b949e; min-width: 140px; }
-        .svc { color: #79c0ff; font-weight: bold; min-width: 150px; }
-        .msg { white-space: pre-wrap; flex: 1; }
-        
-        /* Levels */
-        .lvl-INFO { border-left: 3px solid #3fb950; }
-        .lvl-WARN { border-left: 3px solid #d29922; color: #e3b341; }
-        .lvl-ERROR { border-left: 3px solid #f85149; background: rgba(248, 81, 73, 0.1); }
-        .lvl-DEBUG { border-left: 3px solid #8b949e; color: #8b949e; }
+        /* Metrics Bar */
+        #metrics-bar { background: #1c2128; height: 40px; border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 20px; gap: 20px; font-size: 12px; }
 
-        /* QoS Specific */
-        .qos-metric { background: #1f6feb22; padding: 2px 5px; border-radius: 4px; color: #58a6ff; }
+        /* Main Console */
+        #console { flex: 1; overflow-y: auto; padding: 10px; font-family: 'Fira Code', 'Courier New', monospace; scroll-behavior: smooth; }
+        .entry { display: flex; padding: 4px 8px; border-bottom: 1px solid #1c2128; font-size: 13px; animation: fadeIn 0.2s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .col-ts { width: 100px; color: #636e7b; }
+        .col-node { width: 150px; color: var(--orange); }
+        .col-svc { width: 180px; color: var(--blue); font-weight: bold; }
+        .col-body { flex: 1; white-space: pre-wrap; word-break: break-all; }
+
+        /* Message Types */
+        .type-RTP { background: rgba(176, 131, 240, 0.05); color: var(--purple); border-left: 3px solid var(--purple); }
+        .type-SIP { background: rgba(83, 155, 245, 0.05); color: #8ec2ff; border-left: 3px solid var(--blue); }
+        .lvl-ERROR { color: var(--red); background: rgba(244, 112, 103, 0.05); border-left: 3px solid var(--red); }
+
+        /* Filter Controls */
+        #sidebar { width: 250px; border-right: 1px solid var(--border); background: var(--panel); padding: 20px; display: flex; flex-direction: column; gap: 20px; }
+        .main-container { display: flex; flex: 1; overflow: hidden; }
+        input { background: var(--bg); border: 1px solid var(--border); color: white; padding: 8px; border-radius: 4px; width: 100%; }
+        .filter-group label { display: block; font-size: 11px; margin-bottom: 10px; color: #768390; text-transform: uppercase; }
+        #service-list { display: flex; flex-direction: column; gap: 5px; }
     </style>
 </head>
 <body>
     <header>
-        <h1>👁️ Sentiric Panopticon</h1>
-        <div id="controls">
-            <button onclick="togglePause()" id="btnPause">Pause</button>
-            <button onclick="clearLogs()">Clear</button>
-            <input type="text" id="filter" placeholder="Filter..." onkeyup="applyFilter()" style="background:#0d1117; border:1px solid #30363d; color:white; padding:5px;">
+        <div style="display:flex; align-items:center; gap:15px;">
+            <h2 style="margin:0; font-size:16px; letter-spacing:1px;">👁️ SENTIRIC PANOPTICON <span style="font-size:10px; opacity:0.5;">v3.0</span></h2>
+            <div id="connection-status" class="badge" style="background:var(--green); color:white;">CONNECTED</div>
+        </div>
+        <div class="node-capsule" id="active-nodes">
+            <!-- Dinamik node listesi -->
         </div>
     </header>
-    <div id="logs"></div>
+
+    <div id="metrics-bar">
+        <div id="pps-counter">PPS: <span style="color:var(--purple)">0</span></div>
+        <div id="active-calls">Active Flows: <span style="color:var(--green)">0</span></div>
+        <div id="cpu-load">Node Host: <span id="current-host" style="color:var(--blue)">Scanning...</span></div>
+    </div>
+
+    <div class="main-container">
+        <div id="sidebar">
+            <div class="filter-group">
+                <label>Global Search</label>
+                <input type="text" id="search" placeholder="Regex or Keyword..." onkeyup="refreshFilters()">
+            </div>
+            <div class="filter-group">
+                <label>Dinamik Servisler</label>
+                <div id="service-list">
+                    <!-- Servisler otomatik eklenecek -->
+                </div>
+            </div>
+            <div class="filter-group">
+                <button onclick="clearConsole()" style="width:100%; padding:10px; cursor:pointer; background:#2d333b; border:none; color:white; border-radius:4px;">Konsolu Temizle</button>
+            </div>
+        </div>
+        <div id="console"></div>
+    </div>
 
     <script>
+        const consoleEl = document.getElementById('console');
+        const serviceListEl = document.getElementById('service-list');
+        const nodesEl = document.getElementById('active-nodes');
+        const ppsEl = document.querySelector('#pps-counter span');
+        
+        let services = new Set();
+        let nodes = new Set();
+        let pps = 0;
+        let ppsReset;
+
         const ws = new WebSocket(`ws://${window.location.host}/ws`);
-        const logsDiv = document.getElementById('logs');
-        let isPaused = false;
-        let filterText = "";
 
         ws.onmessage = (event) => {
-            if (isPaused) return;
-            try {
-                const data = JSON.parse(event.data);
-                addLog(data);
-            } catch (e) {
-                console.error("Invalid JSON", event.data);
-            }
+            const data = JSON.parse(event.data);
+            processEvent(data);
         };
 
-    function addLog(data) {
-        if (filterText && !JSON.stringify(data).toLowerCase().includes(filterText)) return;
+        function processEvent(data) {
+            const attr = data.Attributes || {};
+            const res = data.Resource || {};
+            const svc = res['service.name'];
+            const node = res['host.name'];
 
-        const div = document.createElement('div');
-        const level = data.SeverityText || "INFO";
-        
-        // ÖZEL DURUM: RTP Akışı geliyorsa logu renklendir ve indikatör koy
-        let isRtp = data.Attributes && data.Attributes.event === "RTP_FLOW";
-        if (isRtp) {
-            div.style.background = "rgba(0, 255, 0, 0.05)";
-            div.style.borderLeft = "3px solid #3fb950";
-        } else {
-            div.className = `log-entry lvl-${level}`;
-        }
+            // 1. Dinamik Discovery (Servis ve Node)
+            if (!services.has(svc)) {
+                services.add(svc);
+                addServiceFilter(svc);
+            }
+            if (!nodes.has(node)) {
+                nodes.add(node);
+                addNodeBadge(node);
+            }
 
-        const ts = new Date(data.Timestamp).toLocaleTimeString();
-        const node = data.Resource['host.name'] || '???';
-        const svc = data.Resource['service.name'] || 'unknown';
+            // 2. Metrics Logic (RTP tespiti)
+            if (attr.event === "RTP_FLOW") {
+                pps++;
+                updatePPS();
+            }
 
-        div.innerHTML = `
-            <div class="ts" style="width:100px">${ts}</div>
-            <div class="node" style="width:120px; color:#ffa657">[${node}]</div>
-            <div class="svc" style="width:140px">${svc}</div>
-            <div class="msg">${isRtp ? "🟢 LIVE RTP PACKET RECEIVED (" + data.Attributes.packet_len + " bytes)" : data.Body}</div>
-        `;
+            // 3. UI Render
+            const div = document.createElement('div');
+            let typeClass = "";
+            if (data.Body.includes("INVITE") || data.Body.includes("SIP/2.0")) typeClass = "type-SIP";
+            if (attr.event === "RTP_FLOW") typeClass = "type-RTP";
             
-            logsDiv.appendChild(div);
+            div.className = `entry ${typeClass} lvl-${data.SeverityText}`;
             
-            // Auto Scroll
-            if (logsDiv.children.length > 1000) logsDiv.removeChild(logsDiv.firstChild);
-            logsDiv.scrollTop = logsDiv.scrollHeight;
+            const ts = new Date(data.Timestamp).toLocaleTimeString();
+            
+            div.innerHTML = `
+                <div class="col-ts">${ts}</div>
+                <div class="col-node">[${node}]</div>
+                <div class="col-svc">${svc}</div>
+                <div class="col-body">${formatBody(data.Body, attr)}</div>
+            `;
+
+            consoleEl.appendChild(div);
+            if (consoleEl.children.length > 2000) consoleEl.removeChild(consoleEl.firstChild);
+            
+            // Auto-scroll if at bottom
+            consoleEl.scrollTop = consoleEl.scrollHeight;
         }
 
-        function togglePause() {
-            isPaused = !isPaused;
-            document.getElementById('btnPause').classList.toggle('active', isPaused);
+        function formatBody(body, attr) {
+            if (attr.event === "RTP_FLOW") {
+                return `🟢 [MEDIA STREAM] Packet received (${attr.packet_len} bytes) - Flow: ${attr.flow_status}`;
+            }
+            return body.replace(/</g, "&lt;").replace(/>/g, "&gt;");
         }
 
-        function clearLogs() {
-            logsDiv.innerHTML = '';
+        function addServiceFilter(name) {
+            const label = document.createElement('label');
+            label.style = "display:flex; align-items:center; gap:8px; font-size:12px; cursor:pointer;";
+            label.innerHTML = `<input type="checkbox" checked value="${name}" onchange="refreshFilters()"> ${name}`;
+            serviceListEl.appendChild(label);
         }
 
-        function applyFilter() {
-            filterText = document.getElementById('filter').value.toLowerCase();
+        function addNodeBadge(name) {
+            const b = document.createElement('div');
+            b.className = "badge badge-node";
+            b.innerText = name;
+            nodesEl.appendChild(b);
+            document.getElementById('current-host').innerText = name;
+        }
+
+        function updatePPS() {
+            ppsEl.innerText = pps;
+            clearTimeout(ppsReset);
+            ppsReset = setTimeout(() => { pps = 0; ppsEl.innerText = 0; }, 2000);
+        }
+
+        function clearConsole() { consoleEl.innerHTML = ''; }
+
+        function refreshFilters() {
+            const search = document.getElementById('search').value.toLowerCase();
+            const checkedSvcs = Array.from(serviceListEl.querySelectorAll('input:checked')).map(i => i.value);
+            
+            Array.from(consoleEl.children).forEach(el => {
+                const svc = el.querySelector('.col-svc').innerText;
+                const body = el.innerText.toLowerCase();
+                const visible = checkedSvcs.includes(svc) && body.includes(search);
+                el.style.display = visible ? 'flex' : 'none';
+            });
         }
     </script>
 </body>
