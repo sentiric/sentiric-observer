@@ -3,208 +3,105 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SENTIRIC | TELEMETRY v2.1</title>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;800&display=swap" rel="stylesheet">
+    <title>Sentiric Panopticon</title>
     <style>
-        :root {
-            --bg: #050505; --panel: #0f0f0f; --text: #c0c0c0; --border: #222;
-            --sip: #00d4ff; --rtp: #bd00ff; --sys: #00ff9d; --err: #ff4444; --warn: #ffae00;
-            --net: #5865F2; --app: #23a559;
-        }
-        body { background: var(--bg); color: var(--text); font-family: 'JetBrains Mono', monospace; margin: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden; font-size: 12px; }
+        :root { --bg: #0d1117; --text: #c9d1d9; --panel: #161b22; --border: #30363d; }
+        body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', monospace; margin: 0; display: flex; flex-direction: column; height: 100vh; }
         
-        header { background: #000; height: 48px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; padding: 0 15px; }
-        .brand { font-weight: 800; letter-spacing: 1px; color: #fff; }
-        .brand span { color: var(--sys); }
-        .live-dot { height: 8px; width: 8px; background: var(--err); border-radius: 50%; display: inline-block; margin-right: 5px; }
-        .live-dot.on { background: var(--sys); box-shadow: 0 0 8px var(--sys); }
+        header { background: var(--panel); padding: 15px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+        h1 { margin: 0; font-size: 18px; color: #58a6ff; }
+        
+        #controls { display: flex; gap: 10px; }
+        button { background: #21262d; border: 1px solid var(--border); color: white; padding: 5px 10px; cursor: pointer; border-radius: 4px; }
+        button:hover { background: #30363d; }
+        button.active { background: #1f6feb; border-color: #58a6ff; }
 
-        /* TOOLBAR GÜNCELLENDİ */
-        #toolbar { background: var(--panel); padding: 8px 15px; border-bottom: 1px solid var(--border); display: flex; gap: 15px; align-items: center; flex-wrap: wrap; }
-        .section-label { font-size: 10px; font-weight: bold; color: #555; margin-right: 5px; text-transform: uppercase; }
-        .filter-group { display: flex; gap: 4px; padding-right: 10px; border-right: 1px solid #333; align-items: center; }
+        #logs { flex: 1; overflow-y: auto; padding: 10px; font-size: 13px; line-height: 1.4; }
+        .log-entry { display: flex; gap: 10px; padding: 4px; border-bottom: 1px solid #21262d; }
+        .log-entry:hover { background: #161b22; }
         
-        button { background: #1a1a1a; border: 1px solid #333; color: #777; padding: 4px 10px; font-family: inherit; font-size: 11px; cursor: pointer; border-radius: 3px; transition: 0.2s; }
-        button:hover { border-color: #555; color: #fff; }
+        .ts { color: #8b949e; min-width: 140px; }
+        .svc { color: #79c0ff; font-weight: bold; min-width: 150px; }
+        .msg { white-space: pre-wrap; flex: 1; }
         
-        /* Aktif Buton Stilleri */
-        button.active { background: #222; color: #fff; border-color: #555; font-weight: bold; }
-        
-        /* Özel Renkler */
-        button.cat-net.active { border-color: var(--net); color: var(--net); background: rgba(88, 101, 242, 0.1); }
-        button.cat-app.active { border-color: var(--app); color: var(--app); background: rgba(35, 165, 89, 0.1); }
-        
-        .action-btn { border-color: var(--warn); color: var(--warn); font-weight: bold; margin-left: auto; }
-        .action-btn:hover { background: var(--warn); color: #000; }
+        /* Levels */
+        .lvl-INFO { border-left: 3px solid #3fb950; }
+        .lvl-WARN { border-left: 3px solid #d29922; color: #e3b341; }
+        .lvl-ERROR { border-left: 3px solid #f85149; background: rgba(248, 81, 73, 0.1); }
+        .lvl-DEBUG { border-left: 3px solid #8b949e; color: #8b949e; }
 
-        #console { flex: 1; overflow-y: auto; padding: 10px; scroll-behavior: smooth; }
-        .log-row { display: flex; gap: 10px; padding: 2px 4px; border-radius: 2px; font-size: 11px; line-height: 1.4; border-left: 2px solid transparent; align-items: baseline; }
-        .log-row:hover { background: rgba(255,255,255,0.03); }
-        
-        .ts { min-width: 65px; color: #555; font-size: 10px; }
-        .node { min-width: 100px; color: #666; font-weight: bold; background: #111; padding: 1px 4px; border-radius: 3px; text-align: center; font-size: 10px; }
-        .svc { min-width: 140px; font-weight: bold; color: #777; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .msg { flex: 1; white-space: pre-wrap; word-break: break-all; }
-
-        /* Log Colors */
-        .row-sip .svc { color: var(--sip); } .row-sip { border-left-color: var(--sip); }
-        .row-rtp .svc { color: var(--rtp); } .row-rtp { border-left-color: var(--rtp); }
-        .row-sys .svc { color: var(--sys); } .row-sys { border-left-color: var(--sys); }
-        .row-err { background: rgba(255, 68, 68, 0.05); border-left-color: var(--err); } .row-err .msg { color: var(--err); }
-        
+        /* QoS Specific */
+        .qos-metric { background: #1f6feb22; padding: 2px 5px; border-radius: 4px; color: #58a6ff; }
     </style>
 </head>
 <body>
     <header>
-        <div class="brand">SENTIRIC <span>TELEMETRY</span></div>
-        <div style="font-size:10px; color:#555;">
-            <span id="status-dot" class="live-dot"></span> <span id="status-txt">OFFLINE</span>
-            | BUFFER: <span id="buf-len">0</span>
+        <h1>👁️ Sentiric Panopticon</h1>
+        <div id="controls">
+            <button onclick="togglePause()" id="btnPause">Pause</button>
+            <button onclick="clearLogs()">Clear</button>
+            <input type="text" id="filter" placeholder="Filter..." onkeyup="applyFilter()" style="background:#0d1117; border:1px solid #30363d; color:white; padding:5px;">
         </div>
     </header>
-
-    <div id="toolbar">
-        <div class="filter-group">
-            <span class="section-label">APPS</span>
-            <div id="filters-app" style="display:flex; gap:4px;"></div>
-        </div>
-        
-        <div class="filter-group">
-            <span class="section-label">NETWORK</span>
-            <div id="filters-net" style="display:flex; gap:4px;"></div>
-        </div>
-
-        <div class="filter-group">
-            <button onclick="togglePause()" id="btn-pause">PAUSE</button>
-            <button onclick="clearLogs()">CLEAR</button>
-        </div>
-        <button class="action-btn" onclick="downloadJson()">⬇ OTEL DUMP</button>
-    </div>
-
-    <div id="console"></div>
+    <div id="logs"></div>
 
     <script>
-        const consoleEl = document.getElementById('console');
-        const filtersApp = document.getElementById('filters-app');
-        const filtersNet = document.getElementById('filters-net');
-        
-        let allLogs = []; 
-        let isPaused = false;
-        let activeServices = new Set();
-        let knownServices = new Set();
-
         const ws = new WebSocket(`ws://${window.location.host}/ws`);
-        
-        ws.onopen = () => {
-            document.getElementById('status-dot').classList.add('on');
-            document.getElementById('status-txt').innerText = "CONNECTED";
-        };
+        const logsDiv = document.getElementById('logs');
+        let isPaused = false;
+        let filterText = "";
 
         ws.onmessage = (event) => {
             if (isPaused) return;
             try {
-                const entry = JSON.parse(event.data);
-                
-                // OTEL Mapping
-                const uiLog = {
-                    ts: entry.Timestamp || new Date().toISOString(),
-                    node: entry.Resource?.["host.name"] || "UNKNOWN",
-                    service: entry.Resource?.["service.name"] || "UNKNOWN",
-                    level: entry.SeverityText || "INFO",
-                    msg: entry.Body || "",
-                    raw: entry
-                };
-
-                allLogs.push(uiLog);
-                if (allLogs.length > 5000) allLogs.shift();
-                document.getElementById('buf-len').innerText = allLogs.length;
-                
-                registerService(uiLog.service);
-                if (activeServices.has(uiLog.service)) renderRow(uiLog);
-
-            } catch (e) { console.error("Parse Error:", e); }
+                const data = JSON.parse(event.data);
+                addLog(data);
+            } catch (e) {
+                console.error("Invalid JSON", event.data);
+            }
         };
 
-        function registerService(svcName) {
-            if (knownServices.has(svcName)) return;
-            knownServices.add(svcName);
+        function addLog(data) {
+            // Basit Filtreleme
+            if (filterText && !JSON.stringify(data).toLowerCase().includes(filterText)) return;
 
-            // Kategori Belirleme
-            const isNetwork = svcName.includes('SNIFFER');
-            const targetContainer = isNetwork ? filtersNet : filtersApp;
-            const btnClass = isNetwork ? 'cat-net' : 'cat-app';
-
-            // Varsayılan Durum: RTP hariç hepsi açık
-            const isDefaultActive = !svcName.includes('SNIFFER-RTP'); 
-            if (isDefaultActive) activeServices.add(svcName);
-
-            const btn = document.createElement('button');
-            btn.innerText = svcName.replace("SENTIRIC-", "").replace("SNIFFER-", ""); // Butonlarda kısa isim
-            btn.className = isDefaultActive ? `active ${btnClass}` : btnClass;
-            
-            btn.onclick = () => {
-                if (activeServices.has(svcName)) {
-                    activeServices.delete(svcName);
-                    btn.className = btnClass;
-                } else {
-                    activeServices.add(svcName);
-                    btn.className = `active ${btnClass}`;
-                }
-                redrawConsole();
-            };
-            targetContainer.appendChild(btn);
-        }
-
-        function renderRow(entry) {
             const div = document.createElement('div');
-            let cssClass = 'row-def';
-            
-            if (entry.service.includes('SIP')) cssClass = 'row-sip';
-            else if (entry.service.includes('RTP')) cssClass = 'row-rtp';
-            else if (entry.service.includes('SYSTEM')) cssClass = 'row-sys';
-            if (entry.level === 'ERROR') cssClass = 'row-err';
+            const level = data.SeverityText || "INFO";
+            div.className = `log-entry lvl-${level}`;
 
-            div.className = `log-row ${cssClass}`;
-            const time = entry.ts.split('T')[1].split('.')[0];
-            
-            // Node ismini kısalt (SENTIRIC-ANT-PROD-02 -> ANT-PROD-02)
-            const shortNode = entry.node.replace("SENTIRIC-", "");
+            // QoS Özel Formatlama (RTP Jitter/Loss)
+            let body = data.Body;
+            if (data.event === "RTP_QOS") {
+                body = `<span class="qos-metric">LOSS: ${data.packet_loss_percent}%</span> <span class="qos-metric">JITTER: ${data.jitter_ms}ms</span>`;
+            }
+
+            // Timestamp Format
+            const ts = new Date(data.Timestamp).toLocaleTimeString() + "." + new Date(data.Timestamp).getMilliseconds();
 
             div.innerHTML = `
-                <div class="ts">${time}</div>
-                <div class="node">${shortNode}</div>
-                <div class="svc">${entry.service}</div>
-                <div class="msg">${entry.msg}</div>
+                <div class="ts">${ts}</div>
+                <div class="svc">${data.Resource['service.name'] || 'unknown'}</div>
+                <div class="msg">${body}</div>
             `;
             
-            consoleEl.appendChild(div);
-            if (consoleEl.childElementCount > 1000) consoleEl.removeChild(consoleEl.firstChild);
-            consoleEl.scrollTop = consoleEl.scrollHeight;
-        }
-
-        function redrawConsole() {
-            consoleEl.innerHTML = '';
-            allLogs.slice(-1000).forEach(entry => {
-                if (activeServices.has(entry.service)) renderRow(entry);
-            });
+            logsDiv.appendChild(div);
+            
+            // Auto Scroll
+            if (logsDiv.children.length > 1000) logsDiv.removeChild(logsDiv.firstChild);
+            logsDiv.scrollTop = logsDiv.scrollHeight;
         }
 
         function togglePause() {
             isPaused = !isPaused;
-            document.getElementById('btn-pause').innerText = isPaused ? "RESUME" : "PAUSE";
-            document.getElementById('btn-pause').style.color = isPaused ? "var(--warn)" : "";
+            document.getElementById('btnPause').classList.toggle('active', isPaused);
         }
 
-        function clearLogs() { consoleEl.innerHTML = ''; }
+        function clearLogs() {
+            logsDiv.innerHTML = '';
+        }
 
-        function downloadJson() {
-            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(allLogs.map(l => l.raw), null, 2));
-            const a = document.createElement('a');
-            a.href = dataStr;
-            a.download = `sentiric_otel_dump_${new Date().toISOString()}.json`;
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
+        function applyFilter() {
+            filterText = document.getElementById('filter').value.toLowerCase();
         }
     </script>
 </body>

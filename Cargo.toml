@@ -1,28 +1,37 @@
 [package]
 name = "sentiric-observer"
-version = "2.0.0" # OTEL Mimari Geçişi
+version = "2.0.0"
 edition = "2021"
 
 [dependencies]
-tokio = { version = "1.40", features = ["full"] }
+# Async Runtime
+tokio = { version = "1.36", features = ["full"] }
 futures-util = "0.3"
+
+# Web Server & gRPC Runtime
 axum = { version = "0.7", features = ["ws"] }
-tower-http = { version = "0.5", features = ["fs", "cors"] }
-bollard = "0.16"
-pcap = "2.0.0"
-etherparse = "0.13"
+tower-http = { version = "0.5", features = ["fs", "cors", "trace"] }
+tonic = "0.11"
+prost = "0.12"
+
+# Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Docker Integration
+bollard = "0.15"
+
+# Data Handling
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 chrono = { version = "0.4" }
-anyhow = "1.0"
 regex = "1.10"
 lazy_static = "1.4"
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-tonic = "0.12"
-prost = "0.13"
-sysinfo = "0.31"
-hostname = "0.3" # YENİ: Otomatik Hostname Keşfi
+anyhow = "1.0"
+
+# Network Sniffing
+pcap = "1.1"
 
 [build-dependencies]
-tonic-build = "0.12"
+# build.rs dosyasının çalışması için bu bölüm şarttır
+tonic-build = "0.11"
