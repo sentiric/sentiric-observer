@@ -61,28 +61,31 @@
             }
         };
 
-        function addLog(data) {
-            // Basit Filtreleme
-            if (filterText && !JSON.stringify(data).toLowerCase().includes(filterText)) return;
+    function addLog(data) {
+        if (filterText && !JSON.stringify(data).toLowerCase().includes(filterText)) return;
 
-            const div = document.createElement('div');
-            const level = data.SeverityText || "INFO";
+        const div = document.createElement('div');
+        const level = data.SeverityText || "INFO";
+        
+        // ÖZEL DURUM: RTP Akışı geliyorsa logu renklendir ve indikatör koy
+        let isRtp = data.Attributes && data.Attributes.event === "RTP_FLOW";
+        if (isRtp) {
+            div.style.background = "rgba(0, 255, 0, 0.05)";
+            div.style.borderLeft = "3px solid #3fb950";
+        } else {
             div.className = `log-entry lvl-${level}`;
+        }
 
-            // QoS Özel Formatlama (RTP Jitter/Loss)
-            let body = data.Body;
-            if (data.event === "RTP_QOS") {
-                body = `<span class="qos-metric">LOSS: ${data.packet_loss_percent}%</span> <span class="qos-metric">JITTER: ${data.jitter_ms}ms</span>`;
-            }
+        const ts = new Date(data.Timestamp).toLocaleTimeString();
+        const node = data.Resource['host.name'] || '???';
+        const svc = data.Resource['service.name'] || 'unknown';
 
-            // Timestamp Format
-            const ts = new Date(data.Timestamp).toLocaleTimeString() + "." + new Date(data.Timestamp).getMilliseconds();
-
-            div.innerHTML = `
-                <div class="ts">${ts}</div>
-                <div class="svc">${data.Resource['service.name'] || 'unknown'}</div>
-                <div class="msg">${body}</div>
-            `;
+        div.innerHTML = `
+            <div class="ts" style="width:100px">${ts}</div>
+            <div class="node" style="width:120px; color:#ffa657">[${node}]</div>
+            <div class="svc" style="width:140px">${svc}</div>
+            <div class="msg">${isRtp ? "🟢 LIVE RTP PACKET RECEIVED (" + data.Attributes.packet_len + " bytes)" : data.Body}</div>
+        `;
             
             logsDiv.appendChild(div);
             
