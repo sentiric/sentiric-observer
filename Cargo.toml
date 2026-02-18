@@ -1,6 +1,6 @@
 [package]
 name = "sentiric-observer"
-version = "1.5.0"
+version = "2.0.0" # OTEL Mimari Geçişi
 edition = "2021"
 
 [dependencies]
@@ -22,6 +22,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tonic = "0.12"
 prost = "0.13"
 sysinfo = "0.31"
+hostname = "0.3" # YENİ: Otomatik Hostname Keşfi
 
 [build-dependencies]
 tonic-build = "0.12"

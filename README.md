@@ -29,7 +29,7 @@ observer-service:
 ```bash
 sudo apt-get update && sudo apt-get install -y libpcap-dev
 # PATH ve HOME korumalı root çalıştırma
-sudo env "PATH=$PATH" "HOME=$HOME" ENABLE_NETWORK_SNIFFER=true RUST_LOG=info /home/ex/.cargo/bin/cargo run --release
+sudo env "PATH=$PATH" "HOME=$HOME" ENABLE_NETWORK_SNIFFER=true RUST_LOG=info NODE_NAME=TEST /home/ex/.cargo/bin/cargo run --release
 ```
 
 ---
