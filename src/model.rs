@@ -12,7 +12,7 @@ pub struct OtelLogRecord {
     #[serde(rename = "Resource")]
     pub resource: OtelResource,
     #[serde(rename = "Attributes")]
-    pub attributes: serde_json::Value, // Zorunlu (Option değil)
+    pub attributes: serde_json::Value,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -24,7 +24,6 @@ pub struct OtelResource {
 }
 
 impl OtelLogRecord {
-    // Docker Harvester'ın düz metin loglar için kullandığı metod
     pub fn new_raw(service: String, host: String, msg: String) -> Self {
         Self {
             timestamp: chrono::Utc::now().to_rfc3339(),
@@ -34,7 +33,7 @@ impl OtelLogRecord {
                 service_name: service,
                 host_name: host,
             },
-            attributes: json!({}), // Boş JSON objesi (Zorunlu alan olduğu için)
+            attributes: json!({}),
         }
     }
 }
