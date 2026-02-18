@@ -2,226 +2,122 @@
 <html lang="tr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SENTIRIC PANOPTICON v3.2</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <title>PANOPTICON v3.5 - Analyst Pro</title>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono&family=Inter:wght@400;600&display=swap" rel="stylesheet">
     <style>
-        :root {
-            --bg: #0a0c10; --panel: #12151a; --border: #2d333b; --text: #adbac7; 
-            --purple: #bc8cff; --blue: #539bf5; --green: #57ab5a; --orange: #f69d50; --red: #f47067;
-            --font-ui: 'Inter', sans-serif;
-            --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
-        }
-        *, *::before, *::after { box-sizing: border-box; }
-        body { background: var(--bg); color: var(--text); font-family: var(--font-ui); margin: 0; display: flex; height: 100vh; overflow: hidden; }
+        :root { --bg: #0a0c10; --panel: #12151a; --border: #2d333b; --text: #adbac7; --purple: #bc8cff; --blue: #539bf5; --green: #57ab5a; --orange: #f69d50; }
+        body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; margin: 0; display: flex; height: 100vh; overflow: hidden; }
+        main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+        header { padding: 10px 20px; background: var(--panel); border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
         
-        /* Sidebar */
-        #sidebar { width: 260px; background: var(--panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; transition: margin-left 0.3s ease-in-out; }
-        #sidebar.collapsed { margin-left: -260px; }
-        .sidebar-content { padding: 20px; display: flex; flex-direction: column; height: 100%; }
-        .sidebar-title { font-size: 14px; font-weight: 600; margin: 0 0 15px 0; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
-        .filter-input { width: 100%; background: var(--bg); border: 1px solid var(--border); color: white; padding: 10px; border-radius: 6px; font-family: var(--font-ui); }
-        .btn-group { margin-top: auto; display: flex; flex-direction: column; gap: 10px; }
-        .btn { background: #21262d; border: 1px solid var(--border); color: white; padding: 10px; border-radius: 6px; cursor: pointer; text-align: center; }
-        .btn:hover { background: #30363d; }
-        .btn-primary { background: #238636; border-color: #2ea043; }
+        #pulse-chart { height: 80px; background: #000; border-bottom: 1px solid var(--border); }
+        #console-wrapper { flex: 1; overflow-y: auto; position: relative; }
+        #console { position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
 
-        /* Main Content */
-        main { flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; }
-        header { padding: 10px 20px; background: var(--panel); border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; z-index: 5; }
-        .header-left { display: flex; align-items: center; gap: 15px; }
-        .header-title { font-size: 18px; font-weight: 600; letter-spacing: 1px; }
-        .status-badge { display:flex; align-items:center; gap:5px; font-size:12px; font-weight: bold; color:var(--green); }
-        .status-badge span { animation: pulse 2s infinite; }
-        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
-        
-        /* Pulse Chart */
-        #pulse-chart { height: 60px; background: #000; margin: 10px 20px; border: 1px solid var(--border); border-radius: 6px; }
-        #pulse-canvas { width: 100%; height: 100%; }
-
-        /* Log Console */
-        #console { flex: 1; overflow-y: auto; padding: 0 10px; font-family: var(--font-mono); font-size: 12px; line-height: 1.6; }
-        .log-row { display: flex; gap: 10px; padding: 4px 8px; border-bottom: 1px solid #1c2128; border-left: 4px solid transparent; animation: fadeIn 0.3s; }
-        @keyframes fadeIn { from { opacity: 0.5; } to { opacity: 1; } }
-        .log-row.RTP_FLOW { border-left-color: var(--purple); color: var(--purple); background: rgba(188, 140, 255, 0.03); }
-        .log-row.SIP_TRAFFIC { border-left-color: var(--blue); color: #8ec2ff; }
-        .log-row.ERROR { border-left-color: var(--red); color: var(--red); background: rgba(244, 112, 103, 0.05); }
-
-        .log-ts { color: #636e7b; min-width: 90px; }
-        .log-node { color: var(--orange); min-width: 150px; font-weight: bold; }
-        .log-svc { color: var(--blue); min-width: 140px; }
-        .log-body { flex: 1; white-space: pre-wrap; word-break: break-all; }
-        .log-body.expanded { white-space: pre-wrap; }
+        .log-row { display: flex; gap: 10px; padding: 4px 15px; font-size: 13px; line-height: 1.6; font-family: 'JetBrains Mono', monospace; }
+        .log-row.RTP_METRIC { color: var(--purple); }
+        .log-row.SIP_TRAFFIC { color: #8ec2ff; }
     </style>
 </head>
 <body>
-    <aside id="sidebar" class="collapsed">
-        <div class="sidebar-content">
-            <h3 class="sidebar-title">KONTROL PANELİ</h3>
-            <input type="text" id="filter-input" class="filter-input" placeholder="Loglarda ara..." onkeyup="filterLogs()">
-            
-            <div id="services-list" style="margin-top: 20px;">
-                <h3 class="sidebar-title" style="font-size: 12px; margin-bottom: 5px;">KEŞFEDİLEN SERVİSLER</h3>
-                <!-- Dinamik olarak doldurulacak -->
-            </div>
-            
-            <div class="btn-group">
-                <button class="btn" onclick="clearConsole()">Konsolu Temizle</button>
-                <button class="btn btn-primary" onclick="exportLogs('json')">JSON İndir</button>
-            </div>
-        </div>
-    </aside>
-
     <main>
         <header>
-            <div class="header-left">
-                <button onclick="toggleSidebar()" class="btn">☰</button>
-                <h2 class="header-title">👁️ PANOPTICON</h2>
-                <div class="status-badge"><span>●</span> LIVE</div>
-            </div>
-            <div style="display:flex; gap:25px; font-size:13px; font-family: var(--font-mono);">
-                <span>PPS: <b id="pps-value" style="color:var(--purple)">0</b></span>
-                <span>NODE: <b id="node-name" style="color:var(--orange)">-</b></span>
+            <h2 style="margin:0; font-size:16px;">👁️ PANOPTICON v3.5</h2>
+            <div style="display:flex; gap:20px; font-family: 'JetBrains Mono';">
+                <span>PPS: <b id="pps-val" style="color:var(--purple)">0</b></span>
+                <span>NODE: <b id="node-val" style="color:var(--orange)">-</b></span>
             </div>
         </header>
 
-        <div id="pulse-chart">
-            <canvas id="pulse-canvas"></canvas>
-        </div>
-
-        <div id="console"></div>
+        <div id="pulse-chart"><canvas id="canvas"></canvas></div>
+        <div id="console-wrapper"><div id="console"></div></div>
     </main>
 
     <script>
+        const consoleWrapper = document.getElementById('console-wrapper');
         const consoleEl = document.getElementById('console');
-        const ppsEl = document.getElementById('pps-value');
-        const nodeNameEl = document.getElementById('node-name');
-        const servicesListEl = document.getElementById('services-list');
-        const filterInput = document.getElementById('filter-input');
+        const ppsEl = document.getElementById('pps-val');
+        const nodeEl = document.getElementById('node-val');
         
-        let logHistory = [];
-        let pps = 0;
-        let ppsData = new Array(150).fill(0);
-        let discoveredServices = new Set();
+        let allLogs = [];
+        let viewLogs = [];
+        const ROW_HEIGHT = 25;
         let ws;
 
         function connect() {
             ws = new WebSocket(`ws://${window.location.host}/ws`);
-
-            ws.onmessage = (event) => {
-                const data = JSON.parse(event.data);
-                processLog(data);
+            ws.onmessage = (e) => {
+                const data = JSON.parse(e.data);
+                processEvent(data);
             };
-
-            ws.onclose = () => {
-                setTimeout(connect, 2000); // 2 saniye sonra tekrar bağlanmayı dene
-            };
+            ws.onclose = () => setTimeout(connect, 2000);
         }
-        
-        function processLog(data) {
+
+        function processEvent(data) {
+            allLogs.push(data);
+            if (allLogs.length > 5000) allLogs.shift();
+
             const attr = data.Attributes || {};
-            const svc = data.Resource['service.name'];
-
-            // PPS (Packets Per Second) hesaplaması
-            if (attr.event === "RTP_FLOW") pps += 25; // Sample rate'e göre ayarla
-            
-            nodeNameEl.innerText = data.Resource['host.name'];
-
-            // Servis keşfi
-            if (!discoveredServices.has(svc)) {
-                discoveredServices.add(svc);
-                updateServicesList();
+            if (attr.event === 'RTP_METRIC') {
+                ppsEl.innerText = attr.pps;
+                updateChart(attr.pps);
             }
+            nodeEl.innerText = data.Resource['host.name'];
 
-            // Log geçmişini yönet
-            logHistory.push(data);
-            if (logHistory.length > 2000) logHistory.shift();
-
-            appendLogRow(data);
+            updateView();
         }
 
-        function appendLogRow(data) {
-            const attr = data.Attributes || {};
-            const row = document.createElement('div');
-            row.className = `log-row ${attr.event || ''} ${data.SeverityText}`;
+        // Virtual Scrolling Logic
+        function updateView() {
+            const scrollTop = consoleWrapper.scrollTop;
+            const startIndex = Math.floor(scrollTop / ROW_HEIGHT);
+            const visibleRows = Math.ceil(consoleWrapper.clientHeight / ROW_HEIGHT);
+            const endIndex = startIndex + visibleRows + 5; // Buffer for smooth scrolling
+
+            viewLogs = allLogs.slice(Math.max(0, startIndex), Math.min(allLogs.length, endIndex));
             
-            const time = new Date(data.Timestamp).toLocaleTimeString();
-            row.innerHTML = `
-                <div class="log-ts">${time}</div>
-                <div class="log-node">${data.Resource['host.name']}</div>
-                <div class="log-svc">${data.Resource['service.name']}</div>
-                <div class="log-body">${data.Body}</div>
-            `;
-            
-            consoleEl.appendChild(row);
-            if (consoleEl.children.length > 500) consoleEl.removeChild(consoleEl.firstChild);
-            
-            // Sadece en alttaysak otomatik kaydır
-            if (consoleEl.scrollTop + consoleEl.clientHeight >= consoleEl.scrollHeight - 30) {
-                consoleEl.scrollTop = consoleEl.scrollHeight;
-            }
-        }
-        
-        function toggleSidebar() {
-            document.getElementById('sidebar').classList.toggle('collapsed');
+            consoleEl.style.height = `${allLogs.length * ROW_HEIGHT}px`;
+            consoleEl.style.paddingTop = `${startIndex * ROW_HEIGHT}px`;
+
+            consoleEl.innerHTML = viewLogs.map(log => {
+                const attr = log.Attributes || {};
+                return `<div class="log-row ${attr.event || ''}" style="height:${ROW_HEIGHT}px;">
+                    <span style="min-width:90px; color:#666;">${new Date(log.Timestamp).toLocaleTimeString()}</span>
+                    <span style="min-width:140px; color:var(--orange);">${log.Resource['host.name']}</span>
+                    <span style="min-width:130px; color:var(--blue);">${log.Resource['service.name']}</span>
+                    <span>${log.Body}</span>
+                </div>`;
+            }).join('');
         }
 
-        function clearConsole() {
-            consoleEl.innerHTML = '';
-            logHistory = [];
-        }
-
-        function exportLogs(format) {
-            const content = JSON.stringify(logHistory, null, 2);
-            const blob = new Blob([content], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `panopticon_export_${Date.now()}.json`;
-            a.click();
-        }
-
-        function filterLogs() {
-            const filterText = filterInput.value.toLowerCase();
-            Array.from(consoleEl.children).forEach(el => {
-                el.style.display = el.innerText.toLowerCase().includes(filterText) ? 'flex' : 'none';
-            });
-        }
-        
-        function updateServicesList() {
-             servicesListEl.innerHTML = '<h3 class="sidebar-title" style="font-size: 12px; margin-bottom: 5px;">KEŞFEDİLEN SERVİSLER</h3>' + Array.from(discoveredServices).map(s => `<div>- ${s}</div>`).join('');
-        }
-
-        // Grafik Çizim Döngüsü
-        const canvas = document.getElementById('pulse-canvas');
+        // Pulse Chart
+        const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
-        function drawPulse() {
+        let chartData = new Array(150).fill(0);
+        function updateChart(pps) { chartData.push(pps); chartData.shift(); }
+        
+        function draw() {
             canvas.width = canvas.offsetWidth;
             canvas.height = canvas.offsetHeight;
-            ppsData.push(pps);
-            ppsData.shift();
-            ppsEl.innerText = pps;
-            pps = 0;
-
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.clearRect(0,0, canvas.width, canvas.height);
             ctx.strokeStyle = 'rgba(188, 140, 255, 0.8)';
             ctx.lineWidth = 2;
             ctx.beginPath();
-            const step = canvas.width / (ppsData.length - 1);
-            ppsData.forEach((val, i) => {
+            const step = canvas.width / (chartData.length - 1);
+            chartData.forEach((val, i) => {
                 const x = i * step;
-                const y = canvas.height - (Math.min(val / 10, canvas.height - 5));
+                const y = canvas.height - (Math.min(val / 10, canvas.height - 5)); // Scale value
                 if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
             });
             ctx.stroke();
-            
-            requestAnimationFrame(drawPulse);
+            requestAnimationFrame(draw);
         }
 
-        connect(); // İlk bağlantıyı başlat
-        drawPulse(); // Grafik döngüsünü başlat
+        consoleWrapper.addEventListener('scroll', updateView);
+        window.addEventListener('resize', updateView);
+        
+        connect();
+        draw();
     </script>
 </body>
 </html>
