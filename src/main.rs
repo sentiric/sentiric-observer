@@ -30,7 +30,7 @@ struct AppState {
     host_name: String,
 }
 
-// gRPC Servis Uygulaması (Diğer Node'lardan log kabul eder)
+// gRPC Servis Uygulaması (Remote Log Ingestion)
 #[tonic::async_trait]
 impl ObserverService for AppState {
     async fn ingest_log(
@@ -39,16 +39,25 @@ impl ObserverService for AppState {
     ) -> Result<tonic::Response<IngestLogResponse>, tonic::Status> {
         let req = request.into_inner();
         
-        // Gelen gRPC logunu OTEL JSON formatına çevirip WebSocket'e bas
+        let sender_node = if req.node_id.is_empty() {
+            &self.host_name
+        } else {
+            &req.node_id
+        };
+
         let log = model::OtelLogRecord {
             timestamp: chrono::Utc::now().to_rfc3339(),
             severity_text: req.level.to_uppercase(),
             body: req.message,
             resource: model::OtelResource {
                 service_name: req.service_name,
-                host_name: req.node_id, // Kaynak node ismi
+                host_name: sender_node.to_string(),
             },
-            attributes: Some(serde_json::json!({ "trace_id": req.trace_id, "source": "grpc" })),
+            attributes: Some(serde_json::json!({ 
+                "trace_id": req.trace_id, 
+                "source": "remote_grpc",
+                "relay_node": self.host_name 
+            })),
         };
 
         if let Ok(json_str) = serde_json::to_string(&log) {
@@ -65,23 +74,29 @@ async fn main() -> anyhow::Result<()> {
     info!("👁️ Sentiric Observer v2.0 (Panopticon) Başlatılıyor...");
 
     let (tx, _rx) = broadcast::channel::<String>(5000);
-    let host_name = std::env::var("NODE_NAME").unwrap_or("unknown-node".to_string());
+    
+    // [FIX]: hostname::get() dönüş tipini (OsString) String'e çevirme
+    let host_name = std::env::var("NODE_NAME").unwrap_or_else(|_| {
+        hostname::get()
+            .map(|h: std::ffi::OsString| h.to_string_lossy().into_owned())
+            .unwrap_or_else(|_| "unknown-node".into())
+    });
     
     let state = Arc::new(AppState { 
         tx: tx.clone(),
         host_name: host_name.clone(),
     });
 
-    // 1. Docker Harvester Başlat (Local Loglar)
-    let harvester = docker_harvester::DockerHarvester::new(tx.clone(), host_name);
+    // 1. Docker Harvester (Local Loglar)
+    let harvester = docker_harvester::DockerHarvester::new(tx.clone(), host_name.clone());
     tokio::spawn(async move {
         harvester.run().await;
     });
 
-    // 2. gRPC Server Başlat (Remote Loglar - Port 11071)
+    // 2. gRPC Server (Ingest - Port 11071)
     let grpc_state = state.clone();
     tokio::spawn(async move {
-        let addr = "0.0.0.0:11071".parse().unwrap();
+        let addr: SocketAddr = "0.0.0.0:11071".parse().unwrap();
         info!("📡 gRPC Ingest aktif: {}", addr);
         if let Err(e) = tonic::transport::Server::builder()
             .add_service(ObserverServiceServer::new((*grpc_state).clone()))
@@ -91,7 +106,7 @@ async fn main() -> anyhow::Result<()> {
             }
     });
 
-    // 3. Web & WebSocket Server Başlat (Port 11070)
+    // 3. Web & WebSocket Server (UI - Port 11070)
     let app = Router::new()
         .route("/", get(index_handler))
         .route("/ws", get(ws_handler))

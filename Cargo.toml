@@ -29,9 +29,11 @@ regex = "1.10"
 lazy_static = "1.4"
 anyhow = "1.0"
 
-# Network Sniffing
+# Utils
+hostname = "0.3" # [EKLENDİ]
+
+# Network Sniffing (Emergency Mode)
 pcap = "1.1"
 
 [build-dependencies]
-# build.rs dosyasının çalışması için bu bölüm şarttır
 tonic-build = "0.11"
