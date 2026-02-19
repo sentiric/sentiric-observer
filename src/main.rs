@@ -5,10 +5,11 @@ mod utils;
 mod config;
 mod api;
 
-use tracing::{info, error};
+use tracing::{info, error, warn};
 use crate::core::domain::LogRecord;
 use crate::config::AppConfig;
 use crate::core::aggregator::Aggregator;
+use crate::ports::LogIngestor; // Trait'i import et
 use tokio::sync::{mpsc, broadcast};
 use std::sync::Arc;
 use std::net::SocketAddr;
@@ -18,7 +19,7 @@ async fn main() -> anyhow::Result<()> {
     // 1. Config Yükle
     let cfg = AppConfig::load();
 
-    // 2. Loglama Başlat
+    // 2. Loglama Başlat (Env Filter ile)
     tracing_subscriber::fmt::init();
     
     info!("👁️ SENTIRIC OBSERVER v4.0 (Sovereign Edition) Booting...");
@@ -26,7 +27,7 @@ async fn main() -> anyhow::Result<()> {
         cfg.host, cfg.http_port, cfg.grpc_port, cfg.docker_socket);
 
     // 3. KANALLAR (The Nervous System)
-    // ingest_tx -> Veri Girişi (Docker, gRPC)
+    // ingest_tx -> Veri Girişi (Docker, gRPC, Sniffer)
     // ui_tx     -> Veri Çıkışı (WebSocket)
     let (ingest_tx, mut ingest_rx) = mpsc::channel::<LogRecord>(10000);
     let (ui_tx, _) = broadcast::channel::<LogRecord>(1000);
@@ -58,11 +59,11 @@ async fn main() -> anyhow::Result<()> {
     let node_name = hostname::get()
         .map(|h| h.to_string_lossy().into_owned())
         .unwrap_or_else(|_| "unknown".into());
+    let node_name_clone = node_name.clone();
 
     tokio::spawn(async move {
-        match adapters::docker::DockerIngestor::new(&docker_socket, docker_tx, node_name) {
+        match adapters::docker::DockerIngestor::new(&docker_socket, docker_tx, node_name_clone) {
             Ok(ingestor) => {
-                use crate::ports::LogIngestor; 
                 if let Err(e) = ingestor.start().await {
                     error!("❌ Docker Ingestor Runtime Error: {}", e);
                 }
@@ -73,7 +74,6 @@ async fn main() -> anyhow::Result<()> {
 
     // 6. INGESTION: gRPC Server
     let grpc_tx = ingest_tx.clone();
-    // DÜZELTME: [0, 0, 0, 0] ile tüm arayüzleri dinle
     let grpc_addr = SocketAddr::from(([0, 0, 0, 0], cfg.grpc_port));
     
     tokio::spawn(async move {
@@ -89,11 +89,36 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
-    // 7. PRESENTATION: Web Server & WebSocket (Axum)
+    // 7. INGESTION: Network Sniffer (YENİ - DEVRİMSEL KATMAN)
+    // Sadece Linux/Mac ortamında ve tercihen Root ise çalışır.
+    let sniffer_tx = ingest_tx.clone();
+    let sniffer_node = node_name.clone();
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    tokio::spawn(async move {
+        // "any" arayüzü Linux'a özeldir, Mac'te "en0" veya "lo0" seçilmelidir.
+        // Production için "any" en güvenli seçimdir (tüm trafiği görür).
+        // Filtre: "port 5060" -> Sadece SIP trafiği.
+        
+        let interface = if cfg!(target_os = "linux") { "any" } else { "lo0" };
+        let filter = "port 5060 or port 5061"; // SIP UDP/TCP/TLS
+
+        let sniffer = adapters::sniffer::NetworkSniffer::new(interface, filter, sniffer_tx, sniffer_node);
+        
+        match sniffer.start().await {
+            Ok(_) => info!("🕸️ Sniffer thread detached successfully."),
+            Err(e) => {
+                // Sniffer başlatılamazsa uygulamayı çökertme, sadece uyar.
+                warn!("⚠️ NETWORK SNIFFER BAŞLATILAMADI: {}", e);
+                warn!("ℹ️ İpucu: Uygulama root yetkisiyle veya CAP_NET_RAW yeteneğiyle çalışıyor mu?");
+            }
+        }
+    });
+
+    // 8. PRESENTATION: Web Server & WebSocket (Axum)
     let app_state = Arc::new(api::routes::AppState { tx: ui_tx });
     let app = api::routes::create_router(app_state);
     
-    // DÜZELTME: [0, 0, 0, 0] ile tüm arayüzleri dinle
     let http_addr = SocketAddr::from(([0, 0, 0, 0], cfg.http_port));
     info!("🌍 UI Dashboard Active: http://{}", http_addr);
 
