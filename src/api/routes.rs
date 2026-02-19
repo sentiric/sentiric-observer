@@ -8,37 +8,61 @@ use axum::{
 use tower_http::services::ServeDir;
 use std::sync::Arc;
 use tokio::sync::broadcast;
-use crate::model::OtelLogRecord;
+use crate::core::domain::LogRecord;
+use tracing::{info, warn};
 
-const INDEX_HTML: &str = include_str!("../ui/index.html");
+// UI Dosyalarının bulunduğu klasör
+const UI_ASSETS_PATH: &str = "src/ui";
 
+// Uygulama Durumu (Tüm handler'lar buna erişebilir)
 #[derive(Clone)]
 pub struct AppState {
-    pub tx: broadcast::Sender<OtelLogRecord>,
+    // Canlı yayın kanalı (Logları tarayıcılara basar)
+    pub tx: broadcast::Sender<LogRecord>,
 }
 
 pub fn create_router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/", get(index_handler))
         .route("/ws", get(ws_handler))
-        // DÜZELTME: /ui/js/app.js isteği gelince src/ui/js/app.js'e bakacak
-        .nest_service("/ui", ServeDir::new("src/ui"))
+        // Statik dosyaları (CSS/JS) sun
+        .nest_service("/ui", ServeDir::new(UI_ASSETS_PATH))
         .with_state(state)
 }
 
-async fn index_handler() -> Html<&'static str> {
-    Html(INDEX_HTML)
+// Ana sayfa (index.html)
+async fn index_handler() -> impl IntoResponse {
+    // Development modunda dosyadan okumak daha iyidir (Hot reload için)
+    // Production'da bu binary içine gömülebilir (include_str!)
+    match std::fs::read_to_string(format!("{}/index.html", UI_ASSETS_PATH)) {
+        Ok(html) => Html(html),
+        Err(_) => Html("<h1>Error: UI not found. Check src/ui folder.</h1>".to_string()),
+    }
 }
 
-async fn ws_handler(ws: WebSocketUpgrade, State(state): State<Arc<AppState>>) -> impl IntoResponse {
+// WebSocket Upgrade Handler
+async fn ws_handler(
+    ws: WebSocketUpgrade,
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
     ws.on_upgrade(|socket| handle_socket(socket, state))
 }
 
+// Her bağlanan istemci için çalışan fonksiyon
 async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
+    // Broadcast kanalına abone ol
     let mut rx = state.tx.subscribe();
-    while let Ok(log_record) = rx.recv().await {
-        if let Ok(json_msg) = serde_json::to_string(&log_record) {
-            if socket.send(Message::Text(json_msg)).await.is_err() { break; }
+    
+    info!("🔌 Yeni bir UI istemcisi bağlandı.");
+
+    while let Ok(log) = rx.recv().await {
+        // Logu JSON'a çevir
+        if let Ok(json_msg) = serde_json::to_string(&log) {
+            // Tarayıcıya gönder
+            if let Err(e) = socket.send(Message::Text(json_msg)).await {
+                warn!("İstemci hatası (Koptu): {}", e);
+                break;
+            }
         }
     }
 }
