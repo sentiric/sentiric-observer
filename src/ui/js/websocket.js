@@ -1,41 +1,42 @@
 const ws = {
     conn: null,
     connect() {
-        if (typeof CONFIG === 'undefined') return;
-        
-        console.log("📡 WebSocket Bağlanıyor...");
+        console.log("📡 WebSocket Bağlanıyor: " + CONFIG.WS_URL);
         this.conn = new WebSocket(CONFIG.WS_URL);
 
         this.conn.onopen = () => {
-            const status = document.getElementById('ws-status');
-            if(status) status.className = 'status-indicator online';
-            console.log("✅ Panopticon Connected");
+            document.getElementById('ws-status').className = 'status-indicator online';
+            console.log("✅ WebSocket Connected");
         };
 
         this.conn.onclose = () => {
-            const status = document.getElementById('ws-status');
-            if(status) status.className = 'status-indicator offline';
-            setTimeout(() => this.connect(), 2000);
+            document.getElementById('ws-status').className = 'status-indicator offline';
+            setTimeout(() => this.connect(), 3000); // Kopsa bile 3sn sonra tekrar dener
         };
 
         this.conn.onmessage = (e) => {
             try {
-                const data = JSON.parse(e.data);
+                const logData = JSON.parse(e.data);
                 
-                // Veriyi kaydet
-                state.logs.push(data);
-                if (state.logs.length > CONFIG.MAX_LOGS) state.logs.shift();
+                // SUTS v4.0 Verisini State'e Ekle
+                state.logs.push(logData);
                 
-                // Arayüzü güncelle
-                ui.updateStats(data);
+                // Kapasiteyi aşarsa baştan sil (Ring Buffer mantığı)
+                if (state.logs.length > CONFIG.MAX_LOGS) {
+                    state.logs.shift();
+                }
+                
+                // UI Güncelle
+                ui.updateHeader(logData);
                 ui.render();
                 
-                // Scroll metodunu güvenli çağır
-                if (typeof ui.scrollToBottom === 'function') {
-                    ui.scrollToBottom();
-                }
+                if (state.autoScroll) ui.scrollToBottom();
+
+                // Görselleştiriciye veri at (Şimdilik saniyede 1 pulse)
+                if(window.visualizer) visualizer.ping();
+                
             } catch (err) {
-                console.error("📩 Message Processing Error:", err);
+                console.error("📩 WS Parse Error:", err);
             }
         };
     }

@@ -1,5 +1,5 @@
 const state = {
-    logs: [],
+    logs:[],
     autoScroll: true
 };
 
@@ -10,76 +10,110 @@ const ui = {
         if (!wrapper || !content) return;
 
         const totalLogs = state.logs.length;
-        const rowHeight = (typeof CONFIG !== 'undefined') ? CONFIG.ROW_HEIGHT : 24;
+        const rowHeight = CONFIG.ROW_HEIGHT;
 
-        // 1. Toplam Alan Yüksekliği (Scrollbar için)
+        // 1. Toplam Scroll Yüksekliğini Ayarla
         content.style.height = `${totalLogs * rowHeight}px`;
 
-        // 2. Görünürlük Hesaplama
-        const startIndex = Math.floor(wrapper.scrollTop / rowHeight);
-        const visibleCount = Math.ceil(wrapper.clientHeight / rowHeight);
-        const endIndex = Math.min(totalLogs, startIndex + visibleCount + 5);
+        // 2. Ekranda Görünen Kısmı Hesapla (Virtual Window)
+        const startIndex = Math.max(0, Math.floor(wrapper.scrollTop / rowHeight) - 2);
+        const visibleCount = Math.ceil(wrapper.clientHeight / rowHeight) + 4;
+        const endIndex = Math.min(totalLogs, startIndex + visibleCount);
 
-        // 3. Dilimleme
         const visibleLogs = state.logs.slice(startIndex, endIndex);
 
-        // 4. HTML Üretimi (Absolute Positioning ile çakılma engellenir)
+        // 3. Sadece Görünen HTML'i Üret (SUTS v4.0 Parser)
         content.innerHTML = visibleLogs.map((log, index) => {
             const actualIndex = startIndex + index;
-            const y = actualIndex * rowHeight;
-            const time = new Date(log.timestamp).toLocaleTimeString('tr-TR', {hour12:false});
+            const y = actualIndex * rowHeight; // Satırın Y koordinatı
+            
+            // Veri Çıkartımı
+            const time = log.ts ? new Date(log.ts).toLocaleTimeString('tr-TR', {hour12:false}) : '--:--:--';
+            const sev = log.severity || 'INFO';
+            const svc = (log.resource && log.resource.service_name) ? log.resource.service_name : 'unknown';
+            const eventName = log.event || 'LOG';
+            const traceId = log.trace_id ? `<span class="trace-id" title="${log.trace_id}"></span>` : '';
+            const msg = log.message || '';
             
             return `
-                <div class="log-row ${log.event_type || 'LOG'} ${log.level || 'INFO'}" 
-                     style="position: absolute; top: 0; left: 0; right: 0; transform: translateY(${y}px); height: ${rowHeight}px;">
+                <div class="log-row sev-${sev.toLowerCase()}" style="position: absolute; top: 0; left: 0; right: 0; transform: translateY(${y}px); height: ${rowHeight}px;">
                     <span class="time">${time}</span>
-                    <span class="service">[${log.service}]</span>
-                    <span class="msg">${this.escapeHtml(log.message || log.body)}</span>
+                    <span class="sev-badge">${sev}</span>
+                    <span class="svc" title="${svc}">${svc}</span>
+                    <span class="event" title="${eventName}">${eventName}</span>
+                    <span class="msg">${traceId} ${this.escapeHtml(msg)}</span>
                 </div>
             `;
         }).join('');
     },
 
     scrollToBottom() {
-        if (state.autoScroll) {
-            const wrapper = document.getElementById('console-wrapper');
-            if (wrapper) {
-                wrapper.scrollTop = wrapper.scrollHeight;
-            }
+        const wrapper = document.getElementById('console-wrapper');
+        if (wrapper && state.autoScroll) {
+            wrapper.scrollTop = wrapper.scrollHeight;
         }
     },
 
     escapeHtml(text) {
         if (!text) return "";
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
+        // Basit XSS Koruması
+        return text.toString()
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
     },
 
-    updateStats(data) {
-        if (data.event_type === 'RTP_METRIC' && data.attributes) {
-            const pps = document.getElementById('pps-val');
-            const bw = document.getElementById('bw-val');
-            if(pps) pps.innerText = data.attributes.pps || 0;
-            if(bw) bw.innerText = data.attributes.bandwidth_kbps || 0;
-            if(window.visualizer) visualizer.update(data.attributes.pps || 0);
+    updateHeader(log) {
+        document.getElementById('total-logs-val').innerText = state.logs.length;
+        if(log.resource && log.resource.host_name) {
+            document.getElementById('node-val').innerText = log.resource.host_name;
         }
-        const node = document.getElementById('node-val');
-        if(node) node.innerText = data.node || '-';
     },
 
     toggleAutoScroll() {
         state.autoScroll = !state.autoScroll;
-        const btn = document.getElementById('scroll-state');
-        if(btn) btn.innerText = state.autoScroll ? 'ON' : 'OFF';
-        if(state.autoScroll) this.scrollToBottom();
+        const btnText = document.getElementById('scroll-state');
+        const btnDiv = document.getElementById('btn-scroll');
+        
+        if (state.autoScroll) {
+            btnText.innerText = 'ON';
+            btnDiv.className = 'btn-active';
+            this.scrollToBottom();
+        } else {
+            btnText.innerText = 'OFF';
+            btnDiv.className = '';
+        }
     },
 
     clearLogs() {
-        state.logs = [];
+        state.logs =[];
+        this.updateHeader({resource: {host_name: 'Cleared'}});
         this.render();
     }
 };
 
+// Başlangıç Kurulumları
 window.addEventListener('resize', () => ui.render());
-document.addEventListener('DOMContentLoaded', () => ui.render());
+
+// Scroll dinleyicisi: Kullanıcı yukarı kaydırırsa auto-scroll'u kapat
+document.getElementById('console-wrapper').addEventListener('scroll', (e) => {
+    const el = e.target;
+    // Eğer en alta çok yakın değilse ve autoScroll açıksa kapat
+    if (state.autoScroll && el.scrollTop + el.clientHeight < el.scrollHeight - 50) {
+        ui.toggleAutoScroll(); 
+    }
+});
+
+document.addEventListener('DOMContentLoaded', () => {
+    visualizer.init();
+    ws.connect();
+    
+    // Virtual Scroll'un çalışması için manuel scroll tetikleyicisi
+    setInterval(() => {
+        if(state.logs.length > 0 && !state.autoScroll) {
+            ui.render(); // Scroll pozisyonu değiştikçe ekranı boya
+        }
+    }, 100); // 100ms'de bir render kontrolü
+});
