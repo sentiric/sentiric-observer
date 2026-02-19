@@ -10,6 +10,8 @@ use crate::config::AppConfig;
 use crate::ports::LogIngestor; // Trait scope'ta olmalı
 use tokio::sync::mpsc;
 
+use crate::core::aggregator::Aggregator; // <--- EKLENDİ
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // 1. Config Yükle
@@ -23,19 +25,35 @@ async fn main() -> anyhow::Result<()> {
     // 3. Kanal Kurulumu
     let (tx, mut rx) = mpsc::channel::<LogRecord>(10000);
 
-    // 4. Core Engine (Aggregator Mock - Şimdilik Ekrana Basar)
+    // 4. Core Engine (Aggregator Aktif)
     tokio::spawn(async move {
         info!("🧠 Core Engine Active. Waiting for telemetry...");
+        
+        // Aggregator State'i burada yaşar (Thread-local gibi davranır)
+        let mut aggregator = Aggregator::new();
+        
         while let Some(log) = rx.recv().await {
-            // Şimdilik debug amaçlı ekrana basıyoruz
-            println!(
-                "[{}] {} | {} | {} | Trace: {:?}", 
-                log.ts, 
-                log.severity, 
-                log.resource.service_name, 
-                log.message,
-                log.trace_id
-            );
+            // Logu işle
+            if let Some(session) = aggregator.process(log.clone()) {
+                // Eğer bir session güncellendiyse buraya düşer.
+                // İleride buradaki 'session' nesnesini WebSocket'e basacağız.
+                
+                // Debug için: Sadece yeni session oluştuğunda veya hata olduğunda bas
+                if session.logs.len() == 1 || session.status == crate::core::aggregator::SessionStatus::Failed {
+                     info!(
+                        "🔄 Session Update [{}]: {} logs | Status: {:?}", 
+                        session.session_id, 
+                        session.logs.len(), 
+                        session.status
+                    );
+                }
+            } else {
+                // Trace ID'si olmayan loglar (System logs vb.)
+                // println!("Orphan Log: {}", log.message);
+            }
+            
+            // Ara sıra temizlik yap (Her logda değil, gerekirse sayaç koy)
+            // aggregator.cleanup(); 
         }
     });
 
