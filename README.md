@@ -94,7 +94,7 @@ observer-service:
     # SNIFFER AKTİVASYONU
     - SNIFFER_ENABLED=true # UI Aracılıgıyla kapatılabilir
     - SNIFFER_INTERFACE=any  # eth0, ens192 vb # Ui aracılığı ile seçilebilir
-    - SNIFFER_FILTER=
+    - SNIFFER_FILTER=udp port 13084 or udp portrange 50000-50100
     # Boş bırıkılnca sniffer kapalıdır.
     # UI arabiriminden yönetilebilir
     
