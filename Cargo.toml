@@ -12,6 +12,11 @@ tower = { version = "0.4", features = ["util"] }
 tower-http = { version = "0.5", features = ["fs", "cors", "trace"] }
 async-trait = "0.1"  # <--- BU EKSİKTİ, EKLENDİ
 
+# --- EKLENENLER (MISSING DEPS) ---
+futures-util = "0.3"  # StreamExt ve next() için şart
+bytes = "1.5"         # bollard log çıktısı için şart
+# ---------------------------------
+
 # --- Serialization & Validation (SUTS v4.0) ---
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
