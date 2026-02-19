@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use pcap::{Capture, Device};
 use std::collections::HashMap;
 use tokio::sync::mpsc::Sender;
-use tracing::{error, info, warn, debug};
+use tracing::{error, info};
 
 pub struct NetworkSniffer {
     interface: String,
@@ -16,29 +16,32 @@ pub struct NetworkSniffer {
 
 impl NetworkSniffer {
     pub fn new(interface: &str, filter: &str, tx: Sender<LogRecord>, node_name: String) -> Self {
+        // HATA DÜZELTME: BPF Filtresi "any" olamaz. Eğer "any" ise boş string (hepsi) yap.
+        let safe_filter = if filter.trim() == "any" || filter.trim().is_empty() {
+            "".to_string()
+        } else {
+            filter.to_string()
+        };
+
         Self {
             interface: interface.to_string(),
-            filter: filter.to_string(),
+            filter: safe_filter, // Düzeltilmiş filtreyi kullan
             tx,
             node_name,
         }
     }
 
     fn process_packet(&self, packet: pcap::Packet) -> Option<LogRecord> {
-        // Hızlı UTF-8 kontrolü
         let data_str = match std::str::from_utf8(packet.data) {
             Ok(s) => s,
             Err(_) => return None, 
         };
 
-        // Sadece SIP/2.0 içeren paketleri al (Heuristic Filter)
         if !data_str.contains("SIP/2.0") {
             return None;
         }
 
         let method = data_str.split_whitespace().next().unwrap_or("UNKNOWN");
-        
-        // Hızlı Call-ID Extraction
         let call_id = data_str.lines()
             .find(|l| l.to_lowercase().starts_with("call-id:"))
             .map(|l| l.split(':').nth(1).unwrap_or("").trim())
@@ -73,7 +76,7 @@ impl NetworkSniffer {
 #[async_trait]
 impl LogIngestor for NetworkSniffer {
     async fn start(&self) -> Result<()> {
-        info!("🕸️ Sniffer: Interface='{}', Filter='{}'", self.interface, self.filter);
+        info!("🕸️ Sniffer Config: Interface='{}', Filter='{}'", self.interface, self.filter);
 
         let device_name = if self.interface == "any" {
             "any".to_string()
@@ -84,15 +87,25 @@ impl LogIngestor for NetworkSniffer {
             dev.name
         };
 
+        // Capture Ayarları
         let mut cap = Capture::from_device(device_name.as_str())
             .context("Pcap Device Error")?
             .promisc(true)
             .snaplen(65535)
-            .timeout(500) // Timeout'u düşürdük, daha responsive olsun
+            .timeout(500)
             .open()
             .context("Pcap Open Error (Root gerekli)")?;
 
-        cap.filter(&self.filter, true).context("BPF Filter Error")?;
+        // Filtre Uygulama (Hata verirse logla ama çökme, filtre olmadan devam et)
+        if !self.filter.is_empty() {
+            if let Err(e) = cap.filter(&self.filter, true) {
+                error!("❌ BPF Filter Error ('{}'): {}. Filtre devre dışı bırakıldı, tüm trafik dinleniyor.", self.filter, e);
+            } else {
+                info!("✅ BPF Filter Applied: '{}'", self.filter);
+            }
+        } else {
+            info!("ℹ️ No BPF Filter applied (Promiscuous Mode)");
+        }
 
         let tx_clone = self.tx.clone();
         let sniffer_logic = NetworkSniffer {
@@ -108,33 +121,22 @@ impl LogIngestor for NetworkSniffer {
                 match cap.next_packet() {
                     Ok(packet) => {
                         if let Some(log) = sniffer_logic.process_packet(packet) {
-                            // KRİTİK DEĞİŞİKLİK: try_send kullanıyoruz.
-                            // Eğer kanal doluysa (consumer yavaşsa), paketi düşürüp devam ediyoruz.
-                            // Bu sayede sniffer thread'i asla bloklanmıyor.
                             match tx_clone.try_send(log) {
                                 Ok(_) => {
                                     if dropped_packets > 0 {
-                                        warn!("🕸️ Sniffer Recovered: {} packets were dropped due to congestion.", dropped_packets);
+                                        info!("🕸️ Sniffer Recovered ({} dropped).", dropped_packets);
                                         dropped_packets = 0;
                                     }
                                 },
                                 Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
                                     dropped_packets += 1;
-                                    if dropped_packets % 100 == 0 {
-                                        warn!("⚠️ Backpressure! Dropped {} packets so far.", dropped_packets);
-                                    }
                                 },
-                                Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
-                                    error!("❌ Sniffer Channel Closed. Stopping thread.");
-                                    break;
-                                }
+                                Err(_) => break,
                             }
                         }
                     },
                     Err(pcap::Error::TimeoutExpired) => continue,
-                    Err(e) => {
-                        debug!("Pcap Error: {}", e);
-                    }
+                    Err(_) => continue,
                 }
             }
         });
