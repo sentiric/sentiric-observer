@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="tr">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>SENTIRIC PANOPTICON v4.0</title>
+    <title>SENTIRIC | PANOPTICON</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>👁️</text></svg>">
     <link rel="stylesheet" href="/ui/css/theme.css">
     <link rel="stylesheet" href="/ui/css/layout.css">
@@ -10,44 +10,48 @@
 </head>
 <body>
     <div id="app">
-        <!-- ÜST BAR: Durum ve Metrikler -->
+        <!-- HEADER -->
         <header>
-            <div class="brand">👁️ SENTIRIC OBSERVER <span class="version">v4.0</span></div>
+            <div class="brand">👁️ SENTIRIC OBSERVER <span style="opacity:0.5; font-size:10px;">PRO</span></div>
             <div class="stats-bar">
-                <div class="stat" title="Gelen Toplam Log">LOGS: <b id="total-logs-val">0</b></div>
-                <div class="stat" title="Host Adı">NODE: <b id="node-val">System</b></div>
-                <div id="ws-status" class="status-indicator offline" title="WebSocket Durumu"></div>
+                <span><span id="ws-status" class="status-indicator offline"></span>GATEWAY</span>
+                <span>PPS: <b id="pps-val" style="color:#fff">0</b></span>
+                <span>LOGS: <b id="total-logs-val" style="color:#fff">0</b></span>
             </div>
         </header>
 
-        <!-- ORTA PANEL: Görselleştirici (İsteğe Bağlı RTP Grafiği) -->
+        <!-- VISUALIZER (Real-time Pulse) -->
         <section id="visualizer">
             <canvas id="pulse-chart"></canvas>
+            <div id="overlay-stats">
+                <div>LIVE TRAFFIC</div>
+                <div class="stat-big" id="session-count">0 ACTV</div>
+            </div>
         </section>
 
-        <!-- ANA PANEL: Matris Terminal (Sanal Kaydırmalı Log Ekranı) -->
+        <!-- DATA MATRIX -->
         <section id="matrix-console">
             <div id="console-wrapper">
                 <div id="console-content">
-                    <!-- Javascript ile doldurulacak -->
+                    <!-- Virtual Scroll Content Here -->
                 </div>
             </div>
         </section>
         
-        <!-- ALT BAR: Kontroller -->
+        <!-- FOOTER -->
         <nav id="control-plane">
             <div class="controls-left">
-                <button onclick="ui.clearLogs()" class="btn-danger">CLEAR MEMORY</button>
-                <button onclick="ui.toggleAutoScroll()" class="btn-active" id="btn-scroll">AUTO-SCROLL: <span id="scroll-state">ON</span></button>
+                <span style="opacity:0.5; margin-right:10px;">MODE:</span>
+                <button onclick="ui.toggleAutoScroll()" id="btn-scroll" style="background:none; border:none; color:#58a6ff; cursor:pointer;">AUTO-SCROLL [ON]</button>
             </div>
             <div class="controls-right">
-                <span class="status-text">Carrier-Grade Telemetry</span>
+                <button onclick="ui.clearLogs()" style="background:none; border:1px solid #30363d; color:#f85149; border-radius:3px; padding:2px 8px; cursor:pointer;">FLUSH MEMORY</button>
             </div>
         </nav>
     </div>
 
     <script src="/ui/js/config.js"></script>
-    <script src="/ui/js/websocket.js"></script>
+    
     <script src="/ui/js/visualizer.js"></script>
     <script src="/ui/js/app.js"></script>
 </body>

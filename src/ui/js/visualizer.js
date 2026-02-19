@@ -1,49 +1,66 @@
 const visualizer = {
     canvas: null,
     ctx: null,
-    data: new Array(CONFIG.CHART_POINTS).fill(0),
+    data: [],
+    maxPoints: 100, // Son 100 saniyeyi göster
 
     init() {
         this.canvas = document.getElementById('pulse-chart');
-        if(!this.canvas) return;
         this.ctx = this.canvas.getContext('2d');
+        // Initial empty data
+        this.data = new Array(this.maxPoints).fill(0);
         this.animate();
     },
 
-    ping() {
-        // Yeni log geldiğinde grafiği hafif zıplat
-        this.data.push(Math.random() * 40 + 60);
-        this.data.shift();
+    pushData(val) {
+        this.data.push(val);
+        if (this.data.length > this.maxPoints) this.data.shift();
     },
 
     animate() {
         if (!this.canvas) return;
+
+        // Resize
         this.canvas.width = this.canvas.offsetWidth;
         this.canvas.height = this.canvas.offsetHeight;
-        
-        // Grafiği sola kaydır
-        this.data.push(0);
-        this.data.shift();
 
+        const w = this.canvas.width;
+        const h = this.canvas.height;
         const ctx = this.ctx;
-        ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-        
-        ctx.strokeStyle = '#58a6ff';
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        
-        const step = this.canvas.width / (this.data.length - 1);
-        const max = 100;
 
-        this.data.forEach((v, i) => {
+        ctx.clearRect(0, 0, w, h);
+
+        // Grid Lines
+        ctx.strokeStyle = '#30363d';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(0, h/2); ctx.lineTo(w, h/2);
+        ctx.stroke();
+
+        // Data Line
+        ctx.strokeStyle = '#2ea043'; // Green Line
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+
+        // Normalize Data (Max value 50 PPS varsayalım, ama dinamik scale)
+        const maxVal = Math.max(10, Math.max(...this.data) * 1.2);
+        const step = w / (this.maxPoints - 1);
+
+        this.data.forEach((val, i) => {
             const x = i * step;
-            // Sıfırsa ortada düz çizgi, değer varsa zıplama
-            const y = v === 0 ? this.canvas.height / 2 : this.canvas.height - (v / max * this.canvas.height * 0.8);
+            const y = h - ((val / maxVal) * h);
             if (i === 0) ctx.moveTo(x, y);
             else ctx.lineTo(x, y);
         });
         
         ctx.stroke();
-        requestAnimationFrame(() => this.animate());
+
+        // Area Fill
+        ctx.lineTo(w, h);
+        ctx.lineTo(0, h);
+        ctx.fillStyle = 'rgba(46, 160, 67, 0.1)';
+        ctx.fill();
+
+        requestAnimationFrame(this.animate.bind(this));
     }
 };

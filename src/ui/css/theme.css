@@ -1,40 +1,67 @@
 :root {
-    --bg-base: #0d1117;
-    --bg-panel: #161b22;
+    --bg-base: #050505; /* Deep Void */
+    --bg-panel: #0d1117;
     --border-color: #30363d;
     --text-main: #c9d1d9;
     --text-muted: #8b949e;
     
     /* SUTS v4.0 Severity Colors */
-    --color-debug: #8b949e;
-    --color-info: #58a6ff;
-    --color-warn: #d29922;
-    --color-error: #f85149;
-    --color-fatal: #ff7b72;
+    --sev-debug: #8b949e;
+    --sev-info: #58a6ff;
+    --sev-warn: #d29922;
+    --sev-error: #f85149;
+    --sev-fatal: #ff7b72;
     
-    --color-trace: #bc8cff;
+    /* SIP Protocol Colors (Telekom Standartları) */
+    --sip-invite: #2ea043; /* Green */
+    --sip-bye: #da3633;    /* Red */
+    --sip-200: #1f6feb;    /* Blue */
+    --sip-ack: #8b949e;    /* Grey */
+    --sip-register: #d29922; /* Orange */
+    
+    --font-mono: 'JetBrains Mono', monospace;
 }
 
 * { box-sizing: border-box; }
 body { background: var(--bg-base); color: var(--text-main); font-family: 'Inter', sans-serif; margin: 0; overflow: hidden; }
 
+/* Scrollbar */
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: var(--bg-base); }
+::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #58a6ff; }
+
 /* Status & Indicators */
-.status-indicator { width: 12px; height: 12px; border-radius: 50%; display: inline-block; vertical-align: middle; }
-.status-indicator.online { background: #2ea043; box-shadow: 0 0 8px #2ea043; }
-.status-indicator.offline { background: var(--color-error); }
+.status-indicator { width: 8px; height: 8px; border-radius: 50%; display: inline-block; vertical-align: middle; margin-right: 5px; }
+.online { background: #2ea043; box-shadow: 0 0 8px #2ea043; }
+.offline { background: var(--sev-error); }
 
-/* Buttons */
-button { background: var(--bg-panel); color: var(--text-main); border: 1px solid var(--border-color); padding: 5px 15px; cursor: pointer; font-family: 'JetBrains Mono', monospace; font-size: 11px; border-radius: 4px; transition: all 0.2s; }
-button:hover { background: #21262d; }
-button.btn-danger:hover { background: rgba(248, 81, 73, 0.2); border-color: var(--color-error); color: var(--color-error); }
-button.btn-active { border-color: #58a6ff; color: #58a6ff; }
+/* Badges */
+.badge { padding: 2px 6px; border-radius: 3px; font-weight: bold; font-size: 10px; font-family: var(--font-mono); text-transform: uppercase; display: inline-block; min-width: 50px; text-align: center; }
 
-/* Log Badges */
-.sev-badge { padding: 2px 6px; border-radius: 3px; font-weight: bold; font-size: 10px; width: 45px; text-align: center; display: inline-block; }
-.sev-debug .sev-badge { color: var(--color-debug); border: 1px solid var(--color-debug); }
-.sev-info  .sev-badge { color: var(--color-info); border: 1px solid var(--color-info); }
-.sev-warn  .sev-badge { color: var(--bg-base); background: var(--color-warn); }
-.sev-error .sev-badge { color: #fff; background: var(--color-error); }
-.sev-fatal .sev-badge { color: #fff; background: var(--color-fatal); box-shadow: 0 0 5px var(--color-fatal); }
+/* Log Levels */
+.bg-DEBUG { color: var(--sev-debug); border: 1px solid var(--sev-debug); opacity: 0.7; }
+.bg-INFO  { color: var(--sev-info); border: 1px solid var(--sev-info); }
+.bg-WARN  { color: #0d1117; background: var(--sev-warn); }
+.bg-ERROR { color: #fff; background: var(--sev-error); }
+.bg-FATAL { color: #fff; background: var(--sev-fatal); box-shadow: 0 0 10px var(--sev-fatal); animation: pulse-red 1s infinite; }
 
-.trace-id { color: var(--color-trace); font-size: 10px; opacity: 0.8; }
+/* SIP Methods */
+.sip-INVITE { color: var(--sip-invite); border: 1px solid var(--sip-invite); }
+.sip-BYE { color: var(--sip-bye); border: 1px solid var(--sip-bye); }
+.sip-200 { color: var(--sip-200); border: 1px solid var(--sip-200); }
+.sip-REGISTER { color: var(--sip-register); border: 1px solid var(--sip-register); }
+
+@keyframes pulse-red {
+    0% { box-shadow: 0 0 0 0 rgba(255, 123, 114, 0.7); }
+    70% { box-shadow: 0 0 0 10px rgba(255, 123, 114, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(255, 123, 114, 0); }
+}
+
+/* Visualization Overlay */
+#overlay-stats {
+    position: absolute; top: 10px; right: 20px; 
+    font-family: var(--font-mono); font-size: 10px; color: var(--text-muted);
+    text-align: right; pointer-events: none;
+}
+.stat-big { font-size: 14px; color: var(--text-main); font-weight: bold; }
