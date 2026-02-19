@@ -1,39 +1,49 @@
 [package]
 name = "sentiric-observer"
-version = "2.0.0"
+version = "4.0.0"
 edition = "2021"
+authors = ["Sentiric Architecture Team"]
 
 [dependencies]
-# Async Runtime
+# --- Async Runtime & Web ---
 tokio = { version = "1.36", features = ["full"] }
-futures-util = "0.3"
-
-# Web Server & gRPC Runtime
-axum = { version = "0.7", features = ["ws"] }
+axum = { version = "0.7", features = ["ws", "macros"] }
+tower = { version = "0.4", features = ["util"] }
 tower-http = { version = "0.5", features = ["fs", "cors", "trace"] }
-tonic = "0.11"
-prost = "0.12"
+async-trait = "0.1"  # <--- BU EKSİKTİ, EKLENDİ
 
-# Observability
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-
-# Docker Integration
-bollard = "0.15"
-
-# Data Handling
+# --- Serialization & Validation (SUTS v4.0) ---
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-chrono = { version = "0.4" }
-regex = "1.10"
-lazy_static = "1.4"
+validator = { version = "0.16", features = ["derive"] } # Şema kontrolü için kritik
+
+# --- Observability & Logging ---
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# --- Ingestion Adapters ---
+bollard = "0.15" # Docker API
+tonic = "0.11"   # gRPC
+prost = "0.12"
+pcap = "1.1"     # Sniffer (Dikkat: libpcap-dev gerektirir)
+
+# --- Utils ---
+chrono = { version = "0.4", features = ["serde"] }
 anyhow = "1.0"
-
-# Utils
-hostname = "0.3" # [EKLENDİ]
-
-# Network Sniffing (Emergency Mode)
-pcap = "1.1"
+thiserror = "1.0"
+uuid = { version = "1.7", features = ["v4", "fast-rng"] }
+hostname = "0.3"
+lazy_static = "1.4"
+regex = "1.10"
+dotenv = "0.15"
 
 [build-dependencies]
 tonic-build = "0.11"
+
+# --- Production Optimization ---
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
