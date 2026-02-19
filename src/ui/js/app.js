@@ -85,19 +85,41 @@ const ui = {
         const time = log.ts.split('T')[1].split('.')[0]; // Sadece saati al
         const severity = log.severity || 'INFO';
         
-        // SIP Methodlarına göre renk ata
+        // SIP/RTP Methodlarına göre renk ata
         let badgeClass = `bg-${severity}`;
-        if (log.attributes && log.attributes['sip.method']) {
-            badgeClass = `sip-${log.attributes['sip.method']}`;
+        let method = severity;
+        
+        // Attributes kontrolü - Artık akıllı
+        let details = "";
+        
+        if (log.attributes) {
+            if (log.attributes['sip.method']) {
+                method = log.attributes['sip.method'];
+                badgeClass = `sip-${method}`;
+                // Call ID'nin son 4 hanesini göster
+                const cid = log.attributes['sip.call_id'] || '';
+                if(cid) details += `<span style="opacity:0.5; font-size:9px; margin-left:5px;">CID:${cid.slice(-4)}</span>`;
+            } else if (log.attributes['rtp.payload_type']) {
+                method = "RTP";
+                badgeClass = "bg-INFO";
+                details += `<span style="color:#00ffa3; font-size:9px; margin-left:5px;">PT:${log.attributes['rtp.payload_type']}</span>`;
+            }
         }
 
-        // HTML oluştur (Absolute positioning for virtual scroll)
+        // Event rengi
+        const eventColor = log.event.includes('PACKET') ? '#00ffa3' : '#79c0ff';
+
+        // HTML oluştur
         return `<div class="log-row" style="position:absolute; top:${top}px; width:100%;">
             <span class="col-ts">${time}</span>
-            <span class="badge ${badgeClass}">${log.attributes?.['sip.method'] || severity}</span>
-            <span class="col-svc" title="${log.resource?.service_name}">${log.resource?.service_name || 'sys'}</span>
-            <span class="col-evt" title="${log.event}">${log.event}</span>
-            <span class="col-msg" title="${this.escapeHtml(log.message)}">${this.escapeHtml(log.message)}</span>
+            <span class="badge ${badgeClass}">${method}</span>
+            <span class="col-svc" title="${log.resource?.service_name}">
+                ${log.resource?.service_name || 'sys'}
+            </span>
+            <span class="col-evt" style="color:${eventColor}" title="${log.event}">${log.event}</span>
+            <span class="col-msg" title="${this.escapeHtml(log.message)}">
+                ${this.escapeHtml(log.message)} ${details}
+            </span>
         </div>`;
     },
 

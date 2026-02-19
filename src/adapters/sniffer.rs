@@ -5,7 +5,8 @@ use async_trait::async_trait;
 use pcap::{Capture, Device};
 use std::collections::HashMap;
 use tokio::sync::mpsc::Sender;
-use tracing::{error, info};
+use tracing::{error, info, warn};
+use serde_json::Value;
 
 pub struct NetworkSniffer {
     interface: String,
@@ -16,7 +17,7 @@ pub struct NetworkSniffer {
 
 impl NetworkSniffer {
     pub fn new(interface: &str, filter: &str, tx: Sender<LogRecord>, node_name: String) -> Self {
-        // HATA DÜZELTME: BPF Filtresi "any" olamaz. Eğer "any" ise boş string (hepsi) yap.
+        // BPF Filtresi "any" olamaz.
         let safe_filter = if filter.trim() == "any" || filter.trim().is_empty() {
             "".to_string()
         } else {
@@ -25,35 +26,75 @@ impl NetworkSniffer {
 
         Self {
             interface: interface.to_string(),
-            filter: safe_filter, // Düzeltilmiş filtreyi kullan
+            filter: safe_filter,
             tx,
             node_name,
         }
     }
 
     fn process_packet(&self, packet: pcap::Packet) -> Option<LogRecord> {
-        let data_str = match std::str::from_utf8(packet.data) {
-            Ok(s) => s,
-            Err(_) => return None, 
-        };
+        // Paket uzunluğu kontrolü (Çok küçük paketleri at)
+        if packet.header.len < 12 { return None; }
 
-        if !data_str.contains("SIP/2.0") {
-            return None;
+        let payload_offset = 42; // Ethernet(14) + IP(20) + UDP(8) = 42 (Yaklaşık)
+        if (packet.header.len as usize) <= payload_offset { return None; }
+        
+        // Payload'ı güvenli şekilde al
+        let data = &packet.data[payload_offset..];
+        
+        // 1. SIP KONTROLÜ (String Detection)
+        // SIP paketleri genelde metin tabanlıdır.
+        if let Ok(data_str) = std::str::from_utf8(data) {
+            if data_str.contains("SIP/2.0") {
+                return self.create_sip_log(data_str, packet.header.len);
+            }
         }
 
-        let method = data_str.split_whitespace().next().unwrap_or("UNKNOWN");
-        let call_id = data_str.lines()
+        // 2. RTP KONTROLÜ (Heuristic)
+        // RTP'nin belirgin bir header yapısı vardır.
+        // Byte 0: V=2 (10xxxxxx) -> 0x80 mask
+        if data.len() > 12 && (data[0] & 0xC0) == 0x80 {
+             // Payload Type (Byte 1 & 0x7F) -> PCMU(0), PCMA(8), Dynamic(96-127)
+             let pt = data[1] & 0x7F;
+             // Sadece ses kodeklerine odaklanalım (Gürültüyü azaltmak için)
+             if pt == 0 || pt == 8 || (pt >= 96 && pt <= 127) {
+                 return self.create_rtp_log(pt, packet.header.len);
+             }
+        }
+
+        None
+    }
+
+    fn create_sip_log(&self, data: &str, len: u32) -> Option<LogRecord> {
+        let method = data.split_whitespace().next().unwrap_or("SIP");
+        let call_id = data.lines()
             .find(|l| l.to_lowercase().starts_with("call-id:"))
             .map(|l| l.split(':').nth(1).unwrap_or("").trim())
             .unwrap_or("unknown");
 
         let mut attributes = HashMap::new();
-        attributes.insert("net.packet_len".to_string(), serde_json::Value::from(packet.header.len));
-        attributes.insert("net.interface".to_string(), serde_json::Value::String(self.interface.clone()));
-        attributes.insert("sip.method".to_string(), serde_json::Value::String(method.to_string()));
-        attributes.insert("sip.call_id".to_string(), serde_json::Value::String(call_id.to_string()));
+        attributes.insert("net.packet_len".to_string(), Value::from(len));
+        attributes.insert("net.interface".to_string(), Value::String(self.interface.clone()));
+        attributes.insert("sip.method".to_string(), Value::String(method.to_string()));
+        attributes.insert("sip.call_id".to_string(), Value::String(call_id.to_string()));
 
-        Some(LogRecord {
+        Some(self.build_log("SIP_PACKET", format!("SIP {} captured", method), attributes))
+    }
+
+    fn create_rtp_log(&self, pt: u8, len: u32) -> Option<LogRecord> {
+        // RTP trafiği çok yoğun olabilir, bunu sample'lamak gerekebilir.
+        // Şimdilik her paketi logluyoruz ama UI'da görselleştirme için kullanacağız.
+        
+        let mut attributes = HashMap::new();
+        attributes.insert("net.packet_len".to_string(), Value::from(len));
+        attributes.insert("rtp.payload_type".to_string(), Value::from(pt));
+        attributes.insert("net.interface".to_string(), Value::String(self.interface.clone()));
+
+        Some(self.build_log("RTP_PACKET", format!("RTP Stream (PT: {})", pt), attributes))
+    }
+
+    fn build_log(&self, event: &str, msg: String, attributes: HashMap<String, Value>) -> LogRecord {
+        LogRecord {
             schema_v: "1.0.0".to_string(),
             ts: chrono::Utc::now().to_rfc3339(),
             severity: "INFO".to_string(),
@@ -66,12 +107,13 @@ impl NetworkSniffer {
             },
             trace_id: None,
             span_id: None,
-            event: "SIP_PACKET".to_string(),
-            message: format!("SIP {} captured on {}", method, self.interface),
+            event: event.to_string(),
+            message: msg,
             attributes,
-        })
+        }
     }
 }
+
 
 #[async_trait]
 impl LogIngestor for NetworkSniffer {
