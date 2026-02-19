@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <title>SENTIRIC | PANOPTICON</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>👁️</text></svg>">
+    <!-- CSS linkleri aynı kalacak -->
     <link rel="stylesheet" href="/ui/css/theme.css">
     <link rel="stylesheet" href="/ui/css/layout.css">
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;600&display=swap" rel="stylesheet">
 </head>
 <body>
+    <!-- HTML içeriği aynı kalacak (Header, Visualizer, Matrix Console) -->
     <div id="app">
-        <!-- HEADER -->
         <header>
             <div class="brand">👁️ SENTIRIC OBSERVER <span style="opacity:0.5; font-size:10px;">PRO</span></div>
             <div class="stats-bar">
@@ -20,39 +20,32 @@
             </div>
         </header>
 
-        <!-- VISUALIZER (Real-time Pulse) -->
         <section id="visualizer">
             <canvas id="pulse-chart"></canvas>
             <div id="overlay-stats">
                 <div>LIVE TRAFFIC</div>
-                <div class="stat-big" id="session-count">0 ACTV</div>
             </div>
         </section>
 
-        <!-- DATA MATRIX -->
         <section id="matrix-console">
             <div id="console-wrapper">
-                <div id="console-content">
-                    <!-- Virtual Scroll Content Here -->
-                </div>
+                <div id="console-content"></div>
             </div>
         </section>
         
-        <!-- FOOTER -->
         <nav id="control-plane">
             <div class="controls-left">
                 <span style="opacity:0.5; margin-right:10px;">MODE:</span>
-                <button onclick="ui.toggleAutoScroll()" id="btn-scroll" style="background:none; border:none; color:#58a6ff; cursor:pointer;">AUTO-SCROLL [ON]</button>
+                <button id="btn-scroll" style="background:none; border:none; color:#58a6ff; cursor:pointer;">AUTO-SCROLL [ON]</button>
             </div>
             <div class="controls-right">
-                <button onclick="ui.clearLogs()" style="background:none; border:1px solid #30363d; color:#f85149; border-radius:3px; padding:2px 8px; cursor:pointer;">FLUSH MEMORY</button>
+                <button onclick="window.location.reload()" style="background:none; border:1px solid #30363d; color:#f85149; border-radius:3px; padding:2px 8px; cursor:pointer;">FLUSH MEMORY</button>
             </div>
         </nav>
     </div>
 
+    <!-- DÜZELTME: Sadece config ve app.js çağrılıyor. Visualizer app.js içinde import ediliyor. -->
     <script src="/ui/js/config.js"></script>
-    
-    <script src="/ui/js/visualizer.js"></script>
-    <script src="/ui/js/app.js"></script>
+    <script type="module" src="/ui/js/app.js"></script>
 </body>
 </html>

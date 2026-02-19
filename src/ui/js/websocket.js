@@ -1,43 +1,33 @@
-const ws = {
-    conn: null,
+// Artık bu bir ES Module
+export class LogStream {
+    constructor(url, onMessage) {
+        this.url = url;
+        this.onMessage = onMessage;
+        this.conn = null;
+    }
+
     connect() {
-        console.log("📡 WebSocket Bağlanıyor: " + CONFIG.WS_URL);
-        this.conn = new WebSocket(CONFIG.WS_URL);
+        console.log("📡 Connecting to Uplink:", this.url);
+        this.conn = new WebSocket(this.url);
 
         this.conn.onopen = () => {
             document.getElementById('ws-status').className = 'status-indicator online';
-            console.log("✅ WebSocket Connected");
+            console.log("✅ Uplink Secured");
         };
 
         this.conn.onclose = () => {
             document.getElementById('ws-status').className = 'status-indicator offline';
-            setTimeout(() => this.connect(), 3000); // Kopsa bile 3sn sonra tekrar dener
+            console.log("❌ Uplink Lost. Retrying...");
+            setTimeout(() => this.connect(), 3000);
         };
 
         this.conn.onmessage = (e) => {
             try {
-                const logData = JSON.parse(e.data);
-                
-                // SUTS v4.0 Verisini State'e Ekle
-                state.logs.push(logData);
-                
-                // Kapasiteyi aşarsa baştan sil (Ring Buffer mantığı)
-                if (state.logs.length > CONFIG.MAX_LOGS) {
-                    state.logs.shift();
-                }
-                
-                // UI Güncelle
-                ui.updateHeader(logData);
-                ui.render();
-                
-                if (state.autoScroll) ui.scrollToBottom();
-
-                // Görselleştiriciye veri at (Şimdilik saniyede 1 pulse)
-                if(window.visualizer) visualizer.ping();
-                
+                const data = JSON.parse(e.data);
+                this.onMessage(data);
             } catch (err) {
-                console.error("📩 WS Parse Error:", err);
+                console.warn("Corrupt Packet:", err);
             }
         };
     }
-};
+}

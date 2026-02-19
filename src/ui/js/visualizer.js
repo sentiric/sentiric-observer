@@ -1,15 +1,18 @@
-const visualizer = {
+// export anahtar kelimesi eklendi
+export const visualizer = {
     canvas: null,
     ctx: null,
     data: [],
-    maxPoints: 100, // Son 100 saniyeyi göster
+    maxPoints: 100,
 
     init() {
         this.canvas = document.getElementById('pulse-chart');
+        if (!this.canvas) return; // Canvas yoksa hata verme, çık
+
         this.ctx = this.canvas.getContext('2d');
-        // Initial empty data
         this.data = new Array(this.maxPoints).fill(0);
         this.animate();
+        console.log("📊 Visualizer Module Initialized");
     },
 
     pushData(val) {
@@ -18,31 +21,28 @@ const visualizer = {
     },
 
     animate() {
-        if (!this.canvas) return;
+        if (!this.canvas || !this.ctx) return;
 
-        // Resize
         this.canvas.width = this.canvas.offsetWidth;
         this.canvas.height = this.canvas.offsetHeight;
-
         const w = this.canvas.width;
         const h = this.canvas.height;
         const ctx = this.ctx;
 
         ctx.clearRect(0, 0, w, h);
 
-        // Grid Lines
+        // Grid
         ctx.strokeStyle = '#30363d';
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(0, h/2); ctx.lineTo(w, h/2);
         ctx.stroke();
 
-        // Data Line
-        ctx.strokeStyle = '#2ea043'; // Green Line
+        // Line
+        ctx.strokeStyle = '#2ea043';
         ctx.lineWidth = 2;
         ctx.beginPath();
 
-        // Normalize Data (Max value 50 PPS varsayalım, ama dinamik scale)
         const maxVal = Math.max(10, Math.max(...this.data) * 1.2);
         const step = w / (this.maxPoints - 1);
 
@@ -54,8 +54,8 @@ const visualizer = {
         });
         
         ctx.stroke();
-
-        // Area Fill
+        
+        // Fill
         ctx.lineTo(w, h);
         ctx.lineTo(0, h);
         ctx.fillStyle = 'rgba(46, 160, 67, 0.1)';

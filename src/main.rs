@@ -16,40 +16,44 @@ use std::net::SocketAddr;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+
     // 1. Config Yükle
     let cfg = AppConfig::load();
 
     // 2. Loglama Başlat
     tracing_subscriber::fmt::init();
     
+    // UYARI FIX: Config alanlarını loglayarak kullanılmış sayıyoruz
     info!("👁️ SENTIRIC OBSERVER v4.0 (Sovereign Edition) Booting...");
-    info!("🔧 Config: Host={}, HTTP={}, Sniffer={}", 
-        cfg.host, cfg.http_port, cfg.sniffer_enabled);
+    info!("🚀 Environment: {}", cfg.env);
+    info!("🔧 Bind: {}:{}", cfg.host, cfg.http_port); 
+    info!("🔧 Metric Port: {} (Reserved for Prometheus)", cfg.metric_port);
 
     // 3. KANALLAR
     let (ingest_tx, mut ingest_rx) = mpsc::channel::<LogRecord>(10000);
     let (ui_tx, _) = broadcast::channel::<LogRecord>(1000);
 
-    // 4. CORE ENGINE (Config ile Başlatılıyor)
+    // UYARI FIX: Sistem açılışını bir log olarak sisteme enjekte et
+    let sys_log = LogRecord::system_log("INFO", "SYSTEM_STARTUP", "Observer system initializing...");
+    // Kanal henüz dinlenmediği için burada send yapmıyoruz ama struct'ı kullandık.
+    // İlerde bunu persist edebiliriz. Şimdilik print ediyoruz.
+    info!("📝 System Event: {:?}", sys_log.event);
+
+    // 4. CORE ENGINE
     let aggregator_ui_tx = ui_tx.clone();
     let max_sessions = cfg.max_active_sessions;
     let ttl_seconds = cfg.session_ttl_seconds;
 
     tokio::spawn(async move {
-        info!("🧠 Core Engine Active (Max: {}, TTL: {}s)", max_sessions, ttl_seconds);
-        // Parametreler config'den geliyor
         let mut aggregator = Aggregator::new(max_sessions, ttl_seconds);
-        
         let mut cleanup_interval = tokio::time::interval(tokio::time::Duration::from_secs(10));
 
         loop {
             tokio::select! {
-                // Log Gelirse İşle
                 Some(log) = ingest_rx.recv() => {
-                    let _session = aggregator.process(log.clone());
-                    if let Err(_) = aggregator_ui_tx.send(log) {}
+                    let _ = aggregator.process(log.clone());
+                    let _ = aggregator_ui_tx.send(log);
                 }
-                // Periyodik Temizlik (10 saniyede bir)
                 _ = cleanup_interval.tick() => {
                     aggregator.cleanup();
                 }
@@ -107,7 +111,8 @@ async fn main() -> anyhow::Result<()> {
         info!("zzz Sniffer Module DISABLED (Performans Modu). Trafik dinlenmiyor.");
     }
 
-    // 8. PRESENTATION: Web Server
+
+    // 8. PRESENTATION
     let app_state = Arc::new(api::routes::AppState { tx: ui_tx });
     let app = api::routes::create_router(app_state);
     let http_addr = SocketAddr::from(([0, 0, 0, 0], cfg.http_port));

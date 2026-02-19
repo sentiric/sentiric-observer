@@ -2,16 +2,14 @@ use crate::core::domain::LogRecord;
 use async_trait::async_trait;
 use anyhow::Result;
 
-/// Logları sisteme sokan kaynaklar (Docker, gRPC, Sniffer)
 #[async_trait]
 pub trait LogIngestor {
-    /// Ingestor başlatıldığında çalışacak ana döngü
     async fn start(&self) -> Result<()>;
 }
 
-/// Logları dışarı aktaran hedefler (WebSocket, DB)
+/// Gelecekte DB veya File export için kullanılacak
 #[async_trait]
+#[allow(dead_code)] // Şimdilik sadece WebSocket var, bu trait implement edilmedi
 pub trait LogEmitter {
-    /// İşlenmiş logu dışarı bas
     async fn emit(&self, log: LogRecord) -> Result<()>;
 }
