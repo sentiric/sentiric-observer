@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <title>SENTIRIC PANOPTICON v3.5</title>
+    <!-- Favicon: Base64 Gömülü Göz İkonu -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>👁️</text></svg>">
+    
+    <link rel="stylesheet" href="/ui/css/theme.css">
+    <link rel="stylesheet" href="/ui/css/layout.css">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div id="app">
+        <header>
+            <div class="brand">👁️ PANOPTICON <span class="version">v3.5</span></div>
+            <div class="stats-bar">
+                <div class="stat">PPS: <b id="pps-val">0</b></div>
+                <div class="stat">BW: <b id="bw-val">0</b> KB/s</div>
+                <div class="stat">NODE: <b id="node-val">-</b></div>
+                <div id="ws-status" class="status-indicator offline"></div>
+            </div>
+        </header>
+
+        <section id="visualizer">
+            <canvas id="pulse-chart"></canvas>
+        </section>
+
+        <section id="matrix-console">
+            <div id="console-wrapper">
+                <div id="console-content">
+                    <!-- Loglar buraya gelecek -->
+                </div>
+            </div>
+        </section>
+        
+        <nav id="control-plane">
+            <button onclick="ui.clearLogs()">CLEAR</button>
+            <button onclick="ui.toggleAutoScroll()">AUTO-SCROLL: <span id="scroll-state">ON</span></button>
+        </nav>
+    </div>
+
+    <!-- Script yükleme sırası kritiktir -->
+    <script src="/ui/js/config.js"></script>
+    <script src="/ui/js/websocket.js"></script>
+    <script src="/ui/js/visualizer.js"></script>
+    <script src="/ui/js/app.js"></script>
+</body>
+</html>

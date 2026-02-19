@@ -1,51 +1,94 @@
-# 👁️ Sentiric Observer Service
+# 👁️ SENTIRIC OBSERVER (v4.0 Sovereign Edition)
 
 [![Status](https://img.shields.io/badge/status-active-success.svg)]()
-[![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)]()
-[![Standard](https://img.shields.io/badge/standard-OpenTelemetry-purple.svg)]()
+[![Standard](https://img.shields.io/badge/standard-SUTS_v4.0-blue.svg)](docs/01_SENTIRIC_TELEMETRY_STANDARD_SUTS_v4.md)
+[![Architecture](https://img.shields.io/badge/arch-Hexagonal-purple.svg)](docs/03_OBSERVER_ARCHITECTURE_BLUEPRINT_v4.md)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)]()
 
-**Sentiric Observer**, platformun merkezi gözlem ve telemetri motorudur. Dağıtık sistemdeki (Rust, Go, Python) tüm servislerden gelen logları, metrikleri ve ağ paketlerini (Sniffer) toplar, **OpenTelemetry (OTEL)** standardına dönüştürür ve gerçek zamanlı olarak görselleştirir.
+> **"Data is the new oil, but Intelligence is the engine."**
 
-## 🚀 v2.0 Yenilikleri (The OTEL Engine)
+**Sentiric Observer**, dağıtık mikroservis mimarileri (Rust, Go, Python, Node.js) için tasarlanmış, **OpenTelemetry (OTel)** uyumlu, gerçek zamanlı bir **Telemetri ve Anomali Tespit Platformudur**.
 
-1.  **OpenTelemetry Standardı:** Tüm veriler artık endüstri standardı olan OTEL Logs Data Model (v1.0) formatında işlenir.
-2.  **Auto-Discovery:** Servis, çalıştığı fiziksel/sanal sunucunun adını (`host.name`) otomatik keşfeder ve loglara etiketler.
-3.  **Akıllı Ayrıştırma (Smart Parsing):** Docker'dan gelen karmaşık JSON loglarını otomatik algılar ve temizler.
-4.  **Network İzolasyonu:** RTP/SIP ağ trafiği (Noise) ile Uygulama logları (Signal) arayüzde ayrı sekmelerde yönetilir.
-
-## 🎯 Temel Sorumluluklar
-
-1.  **Log Toplama (Harvester):** Yerel Docker socket üzerinden çalışan tüm konteynerlerin loglarını toplar.
-2.  **Ağ Analizi (Sniffer):** `libpcap` kullanarak 5060 (SIP) ve RTP portlarını dinler, sinyalleşme ve medya akışını analiz eder.
-3.  **Normalizasyon:** Farklı kaynaklardan (Redis, Postgres, Rust Apps) gelen verileri tek bir JSON şemasına (STS v2.0) dönüştürür.
-4.  **Yönlendirme (Relay):** Toplanan verileri WebSocket üzerinden UI'a veya gRPC üzerinden merkezi bir sunucuya (Nexus) iletir.
-
-## 🔌 Bağlantılar
-
-*   **HTTP UI:** `11070` (Gerçek zamanlı Dashboard)
-*   **gRPC Ingest:** `11071` (Dış servislerden log kabulü)
-*   **Metrics:** `11072` (Prometheus endpoint)
-
-## 🛠️ Kurulum (Infrastructure)
-
-Observer, ana makine (Host) ağını dinleyebilmek için `network_mode: host` ile çalışmalıdır.
-
-```yaml
-observer-service:
-  image: ghcr.io/sentiric/sentiric-observer:latest
-  container_name: observer-service
-  network_mode: host
-  volumes:
-    - /var/run/docker.sock:/var/run/docker.sock:ro
-    - /etc/hostname:/etc/hostname:ro # Node ismini doğru almak için
-  environment:
-    - ENABLE_NETWORK_SNIFFER=true
-    - UPSTREAM_OBSERVER_URL=http://center-node:11071 # Opsiyonel
-```
-
-## 📊 Telemetri Standardı
-
-Bu servis, [Sentiric Telemetry Standard (STS v2.0)](../sentiric-infrastructure/TELEMETRY_STANDARD.md) spesifikasyonunu uygular.
+Sadece log toplamaz; veriyi **anlar**, **ilişkilendirir** (correlation) ve **görselleştirir**. Özellikle Telekom (SIP/RTP) ve Yüksek Trafikli Edge sistemler için optimize edilmiştir.
 
 ---
-© 2026 Sentiric Team | Carrier-Grade Observability
+
+## 🚀 Temel Yetenekler (Key Capabilities)
+
+*   **Carrier-Grade Governance:** Tüm servisler için zorunlu [SUTS v4.0 Standardı](docs/01_SENTIRIC_TELEMETRY_STANDARD_SUTS_v4.md) ile veri bütünlüğü sağlar.
+*   **Polyglot Ingestion:** Docker Container'ları, gRPC streamleri ve Ağ Paketlerini (Sniffer) aynı anda işler.
+*   **Real-time Intelligence:** Logları bir veritabanına gömüp sonra sorgulamak yerine, **hafızada (In-Memory)** analiz eder ve anlık anomali tespiti yapar.
+*   **Hexagonal Architecture:** İş mantığı (Core), dış dünyadan (Adapters) tamamen izole edilmiştir.
+*   **Zero-Overhead UI:** WebSocket üzerinden çalışan, binlerce logu saniyeler içinde çizebilen "Matrix Style" arayüz.
+
+---
+
+## 📚 Dokümantasyon (The Constitution)
+
+Bu proje rastgele kodlanmamıştır. Aşağıdaki standartlara sıkı sıkıya bağlıdır:
+
+| Belge | Açıklama |
+| :--- | :--- |
+| 📜 **[SUTS v4.0 Standardı](docs/01_SENTIRIC_TELEMETRY_STANDARD_SUTS_v4.md)** | Tüm servislerin uyması gereken JSON Log Şeması ve Kuralları. |
+| 🏗️ **[Mimari Blueprint](docs/03_OBSERVER_ARCHITECTURE_BLUEPRINT_v4.md)** | Sistemin Hexagonal yapısı, Actor Modeli ve Veri Akışı. |
+| 🛠️ **[Implementation Guide](docs/02_LANGUAGE_IMPLEMENTATION_GUIDE_v1.md)** | Rust, Go, Python ve Node.js için entegrasyon rehberi. |
+| 🗺️ **[Yol Haritası](docs/04_PROJECT_EXECUTION_ROADMAP.md)** | Faz faz geliştirme planı ve hedefler. |
+
+---
+
+## 🏗️ Sistem Mimarisi (High-Level)
+
+```mermaid
+graph LR
+    A[Microservices] -- JSON Log Stream --> B(Ingestion Adapters)
+    N[Network Traffic] -- PCAP --> B
+    B --> C{Schema Validator}
+    C -- Valid --> D[Core Domain / Aggregator]
+    C -- Invalid --> X[Dead Letter Queue]
+    D --> E[Export Adapters]
+    E --> F((WebSocket UI))
+    E --> G[(External Storage / Loki)]
+```
+
+---
+
+## 🛠️ Kurulum ve Çalıştırma
+
+### Gereksinimler
+*   Docker & Docker Compose
+*   Rust 1.75+ (Geliştirme için)
+
+### Hızlı Başlat (Production Mode)
+
+```bash
+# Observer'ı Host Network modunda başlat (Sniffer için gereklidir)
+docker-compose up -d --build
+```
+
+### Geliştirici Modu (Dev)
+
+```bash
+# 1. Projeyi derle
+cargo build --release
+
+# 2. Çalıştır (Log seviyesi: INFO)
+RUST_LOG=info ./target/release/sentiric-observer
+```
+
+---
+
+## 🔌 Portlar ve Erişim
+
+*   **UI Dashboard:** `http://localhost:11070`
+*   **gRPC Ingest:** `0.0.0.0:11071`
+*   **Metrics:** `http://localhost:11072/metrics`
+
+---
+
+## 🛡️ Lisans ve Katkı
+
+Bu proje **Sentiric Core Team** tarafından geliştirilmektedir.
+Standartlara katkıda bulunmak için lütfen önce [RFC Sürecini](docs/) inceleyin.
+
+---
+© 2026 Sentiric Platform | *Observability for the Sovereign Cloud*

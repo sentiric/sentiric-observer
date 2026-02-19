@@ -1,0 +1,18 @@
+:root {
+    --bg: #0a0c10; --panel: #12151a; --border: #2d333b; 
+    --text: #adbac7; --purple: #bc8cff; --blue: #539bf5; 
+    --green: #57ab5a; --orange: #f69d50; --red: #f47067;
+}
+
+body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; margin:0; }
+
+.brand { font-weight: 600; font-size: 16px; color: var(--text); }
+.version { font-size: 10px; opacity: 0.5; vertical-align: super; }
+
+.status-indicator { width: 10px; height: 10px; border-radius: 50%; }
+.status-indicator.online { background: var(--green); box-shadow: 0 0 8px var(--green); }
+.status-indicator.offline { background: var(--red); }
+
+.log-row.SIP_PACKET { color: var(--blue); border-left: 2px solid var(--blue); }
+.log-row.RTP_METRIC { color: var(--purple); }
+.log-row.ERROR { color: var(--red); background: rgba(244, 112, 103, 0.05); }
