@@ -23,7 +23,6 @@ async fn main() -> anyhow::Result<()> {
     // 2. Loglama Başlat
     tracing_subscriber::fmt::init();
     
-    // UYARI FIX: Config alanlarını loglayarak kullanılmış sayıyoruz
     info!("👁️ SENTIRIC OBSERVER v4.0 (Sovereign Edition) Booting...");
     info!("🚀 Environment: {}", cfg.env);
     info!("🔧 Bind: {}:{}", cfg.host, cfg.http_port); 
@@ -33,13 +32,10 @@ async fn main() -> anyhow::Result<()> {
     let (ingest_tx, mut ingest_rx) = mpsc::channel::<LogRecord>(10000);
     let (ui_tx, _) = broadcast::channel::<LogRecord>(1000);
 
-    // UYARI FIX: Sistem açılışını bir log olarak sisteme enjekte et
     let sys_log = LogRecord::system_log("INFO", "SYSTEM_STARTUP", "Observer system initializing...");
-    // Kanal henüz dinlenmediği için burada send yapmıyoruz ama struct'ı kullandık.
-    // İlerde bunu persist edebiliriz. Şimdilik print ediyoruz.
     info!("📝 System Event: {:?}", sys_log.event);
 
-    // 4. CORE ENGINE
+    // 4. CORE ENGINE (Aggregator & Correlation Injector)
     let aggregator_ui_tx = ui_tx.clone();
     let max_sessions = cfg.max_active_sessions;
     let ttl_seconds = cfg.session_ttl_seconds;
@@ -50,7 +46,22 @@ async fn main() -> anyhow::Result<()> {
 
         loop {
             tokio::select! {
-                Some(log) = ingest_rx.recv() => {
+                Some(mut log) = ingest_rx.recv() => {
+                    // --- KRİTİK MİMARİ GÜNCELLEME: TRACE ID ENJEKSİYONU ---
+                    // Eğer log'da trace_id yoksa, sip.call_id'den doldurmayı dene.
+                    // Bu, sistemin korelasyon beynidir.
+                    if log.trace_id.is_none() {
+                        if let Some(call_id_val) = log.attributes.get("sip.call_id") {
+                            if let Some(call_id_str) = call_id_val.as_str() {
+                                if !call_id_str.is_empty() {
+                                    log.trace_id = Some(call_id_str.to_string());
+                                }
+                            }
+                        }
+                    }
+                    // -----------------------------------------------------------
+
+                    // Artık potansiyel olarak zenginleştirilmiş log işleniyor
                     let _ = aggregator.process(log.clone());
                     let _ = aggregator_ui_tx.send(log);
                 }
@@ -70,7 +81,6 @@ async fn main() -> anyhow::Result<()> {
     let node_name_clone = node_name.clone();
 
     tokio::spawn(async move {
-        // Docker ingest logic...
         match adapters::docker::DockerIngestor::new(&docker_socket, docker_tx, node_name_clone) {
             Ok(ingestor) => { if let Err(e) = ingestor.start().await { error!("Docker Error: {}", e); } },
             Err(e) => error!("Docker Connect Error: {}", e),
@@ -82,7 +92,6 @@ async fn main() -> anyhow::Result<()> {
     let grpc_addr = SocketAddr::from(([0, 0, 0, 0], cfg.grpc_port));
     
     tokio::spawn(async move {
-        // gRPC logic...
         let state = api::grpc::GrpcServerState { tx: grpc_tx };
         let server = tonic::transport::Server::builder()
             .add_service(api::grpc::observer_proto::observer_service_server::ObserverServiceServer::new(state))
@@ -110,7 +119,6 @@ async fn main() -> anyhow::Result<()> {
     } else {
         info!("zzz Sniffer Module DISABLED (Performans Modu). Trafik dinlenmiyor.");
     }
-
 
     // 8. PRESENTATION
     let app_state = Arc::new(api::routes::AppState { tx: ui_tx });
