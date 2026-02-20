@@ -13,7 +13,6 @@ use tracing::{error, info};
 const DEDUP_CACHE_DURATION_MS: u64 = 200;
 const DEDUP_CACHE_CAPACITY: usize = 2048;
 
-/// Kısa süreli paket hash hafızası (TTL Cache)
 struct PacketDedupCache {
     entries: VecDeque<(u64, Instant)>,
     duration: Duration,
@@ -27,24 +26,22 @@ impl PacketDedupCache {
         }
     }
 
-    /// Yeni bir paketin hash'ini kontrol eder. Varsa 'true' döner (duplicate).
-    /// Yoksa ekler ve 'false' döner (unique).
-    fn check_and_insert(&mut self, packet_data: &[u8]) -> bool {
+    fn check_and_insert(&mut self, payload: &[u8]) -> bool {
         let now = Instant::now();
         self.cleanup(now);
 
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        packet_data.hash(&mut hasher);
+        payload.hash(&mut hasher);
         let hash = hasher.finish();
 
         if self.entries.iter().any(|(h, _)| *h == hash) {
-            true // Duplicate
+            true
         } else {
             if self.entries.len() == self.entries.capacity() {
                 self.entries.pop_front();
             }
             self.entries.push_back((hash, now));
-            false // Unique
+            false
         }
     }
 
@@ -58,7 +55,6 @@ impl PacketDedupCache {
         }
     }
 }
-
 
 pub struct NetworkSniffer {
     interface: String,
@@ -74,18 +70,11 @@ impl NetworkSniffer {
         } else {
             filter.to_string()
         };
-
-        Self {
-            interface: interface.to_string(),
-            filter: safe_filter,
-            tx,
-            node_name,
-        }
+        Self { interface: interface.to_string(), filter: safe_filter, tx, node_name }
     }
     
-    fn parse_headers(packet: &pcap::Packet, link_type: Linktype) -> Option<(Vec<u8>, usize)> {
+    fn parse_headers(packet: &pcap::Packet, link_type: Linktype) -> Option<Vec<u8>> {
         let data = packet.data;
-
         let offset = match link_type {
             Linktype::ETHERNET => {
                 if data.len() < 14 { return None; }
@@ -98,72 +87,51 @@ impl NetworkSniffer {
         };
 
         if data.len() <= offset { return None; }
-
         let ip_header_start = offset;
         if data.len() <= ip_header_start { return None; }
-        
         let version_ihl = data[ip_header_start];
         let version = version_ihl >> 4;
-        
         if version != 4 { return None; }
-
         let ihl = version_ihl & 0x0F;
         let ip_header_len = (ihl as usize) * 4;
         if ip_header_len < 20 { return None; }
-
         if data.len() <= ip_header_start + 9 { return None; }
         let protocol = data[ip_header_start + 9];
-
         if protocol != 17 { return None; }
-
         let udp_header_start = ip_header_start + ip_header_len;
         let udp_header_len = 8;
         if data.len() < udp_header_start + udp_header_len { return None; }
-
         let payload_start = udp_header_start + udp_header_len;
         if data.len() <= payload_start { return None; }
-
-        Some((data[payload_start..].to_vec(), payload_start))
+        Some(data[payload_start..].to_vec())
     }
 
-    fn process_packet(&self, packet: pcap::Packet, link_type: Linktype) -> Option<LogRecord> {
-        let (payload, _header_len) = Self::parse_headers(&packet, link_type)?;
-        
-        if let Ok(data_str) = std::str::from_utf8(&payload) {
+    fn process_payload(&self, payload: &[u8], original_len: u32) -> Option<LogRecord> {
+        if let Ok(data_str) = std::str::from_utf8(payload) {
             if data_str.contains("SIP/2.0") {
-                return self.create_sip_log(data_str, packet.header.len);
+                return self.create_sip_log(data_str, original_len);
             }
         }
-
         if payload.len() > 12 && (payload[0] & 0xC0) == 0x80 {
              let pt = payload[1] & 0x7F;
              if pt == 0 || pt == 8 || pt == 18 || (pt >= 96 && pt <= 127) {
-                 return self.create_rtp_log(pt, packet.header.len);
+                 return self.create_rtp_log(pt, original_len);
              }
         }
-
         None
     }
 
     fn create_sip_log(&self, data: &str, len: u32) -> Option<LogRecord> {
         let first_word = data.split_whitespace().next().unwrap_or("UNKNOWN");
-        
         let method = if first_word == "SIP/2.0" {
-            // This is a response, e.g., "SIP/2.0 200 OK"
             let status_code = data.split_whitespace().nth(1).unwrap_or("000");
             format!("RESPONSE/{}", status_code)
         } else {
-            // This is a request, e.g., "INVITE sip:..."
             first_word.to_string()
         };
-
         let call_id = data.lines()
             .find(|l| l.to_lowercase().starts_with("call-id") || l.to_lowercase().starts_with("i:"))
-            .map(|l| {
-                if let Some(pos) = l.find(':') {
-                    l[pos+1..].trim()
-                } else { "unknown" }
-            })
+            .map(|l| if let Some(pos) = l.find(':') { l[pos+1..].trim() } else { "unknown" })
             .unwrap_or("unknown");
 
         let mut attributes = HashMap::new();
@@ -171,7 +139,6 @@ impl NetworkSniffer {
         attributes.insert("net.interface".to_string(), Value::String(self.interface.clone()));
         attributes.insert("sip.method".to_string(), Value::String(method.clone()));
         attributes.insert("sip.call_id".to_string(), Value::String(call_id.to_string()));
-
         Some(self.build_log("SIP_PACKET", format!("SIP {} captured", method), attributes))
     }
 
@@ -185,21 +152,13 @@ impl NetworkSniffer {
 
     fn build_log(&self, event: &str, msg: String, attributes: HashMap<String, Value>) -> LogRecord {
         LogRecord {
-            schema_v: "1.0.0".to_string(),
-            ts: chrono::Utc::now().to_rfc3339(),
-            severity: "INFO".to_string(),
+            schema_v: "1.0.0".to_string(), ts: chrono::Utc::now().to_rfc3339(), severity: "INFO".to_string(),
             tenant_id: "default".to_string(),
             resource: ResourceContext {
-                service_name: "network-sniffer".to_string(),
-                service_version: "1.0.0".to_string(),
-                service_env: "production".to_string(),
-                host_name: Some(self.node_name.clone()),
+                service_name: "network-sniffer".to_string(), service_version: "1.0.0".to_string(),
+                service_env: "production".to_string(), host_name: Some(self.node_name.clone()),
             },
-            trace_id: None,
-            span_id: None,
-            event: event.to_string(),
-            message: msg,
-            attributes,
+            trace_id: None, span_id: None, event: event.to_string(), message: msg, attributes,
         }
     }
 }
@@ -208,23 +167,18 @@ impl NetworkSniffer {
 impl LogIngestor for NetworkSniffer {
     async fn start(&self) -> Result<()> {
         info!("🕸️ Sniffer Config: Interface='{}', Filter='{}'", self.interface, self.filter);
-
         let device_name = if self.interface == "any" {
             "any".to_string()
         } else {
-            let dev = Device::list()?.into_iter()
-                .find(|d| d.name == self.interface)
+            let dev = Device::list()?.into_iter().find(|d| d.name == self.interface)
                 .ok_or_else(|| anyhow::anyhow!("Arayüz bulunamadı: {}", self.interface))?;
             dev.name
         };
-
         let mut cap = Capture::from_device(device_name.as_str())
             .context("Pcap Device Error")?.promisc(true).snaplen(65535).timeout(500)
             .open().context("Pcap Open Error (Root gerekli)")?;
-
         let link_type = cap.get_datalink();
         info!("🔗 DataLink Type: {:?} ({})", link_type, link_type.get_name().unwrap_or_else(|_| "?".to_string()));
-
         if !self.filter.is_empty() {
             if let Err(e) = cap.filter(&self.filter, true) {
                 error!("❌ BPF Filter Error ('{}'): {}. Sniffer devre dışı kalıyor.", self.filter, e);
@@ -244,18 +198,15 @@ impl LogIngestor for NetworkSniffer {
             loop {
                 match cap.next_packet() {
                     Ok(packet) => {
-                        if dedup_cache.check_and_insert(packet.data) { continue; } // Duplicate, skip
-
-                        if let Some(log) = sniffer_logic.process_packet(packet, link_type) {
-                            match tx_clone.try_send(log) {
-                                Ok(_) => {
-                                    if dropped_packets > 0 {
-                                        info!("🕸️ Sniffer Recovered ({} dropped).", dropped_packets);
-                                        dropped_packets = 0;
-                                    }
-                                },
-                                Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => { dropped_packets += 1; },
-                                Err(_) => break,
+                        if let Some(payload) = Self::parse_headers(&packet, link_type) {
+                            if dedup_cache.check_and_insert(&payload) { continue; } // DEDUPLICATION ON PAYLOAD
+                            
+                            if let Some(log) = sniffer_logic.process_payload(&payload, packet.header.len) {
+                                match tx_clone.try_send(log) {
+                                    Ok(_) => { if dropped_packets > 0 { info!("🕸️ Sniffer Recovered ({} dropped).", dropped_packets); dropped_packets = 0; } },
+                                    Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => { dropped_packets += 1; },
+                                    Err(_) => break,
+                                }
                             }
                         }
                     },
