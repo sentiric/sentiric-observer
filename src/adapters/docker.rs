@@ -13,7 +13,7 @@ use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 use tracing::{error, info, warn};
 
-// Bu fonksiyon değişmeden kalıyor.
+// Bu fonksiyon yardımcı olarak kalıyor
 fn extract_call_id_from_json(map: &serde_json::Map<String, Value>) -> Option<&str> {
     const CALL_ID_KEYS: [&str; 4] = ["call_id", "callid", "sip.call_id", "CallID"];
     for key in CALL_ID_KEYS {
@@ -41,48 +41,67 @@ impl DockerIngestor {
         Ok(Self { docker, tx, node_name, monitored_containers: Arc::new(Mutex::new(HashMap::new())) })
     }
 
-    // ================== MİMARİ DÜZELTME ==================
     fn process_line(&self, line: String, container_name: &str, stream_type: &str) -> LogRecord {
         let cleaned_line = parser::clean_ansi(&line);
 
         // 1. SUTS Fast-Path: Gelen log zaten standart formatta mı?
-        if let Ok(mut record) = serde_json::from_str::<LogRecord>(&cleaned_line) {
+        let mut record = if let Ok(mut rec) = serde_json::from_str::<LogRecord>(&cleaned_line) {
             // Observer, host.name alanını doldurarak zenginleştirme yapar.
-            if record.resource.host_name.is_none() {
-                record.resource.host_name = Some(self.node_name.clone());
+            if rec.resource.host_name.is_none() {
+                rec.resource.host_name = Some(self.node_name.clone());
             }
-            return record; // Logu yeniden işlemeden, olduğu gibi döndür.
-        }
-        
-        // 2. Fallback - Generic JSON: Eğer SUTS değilse, genel bir JSON olabilir mi?
-        if let Ok(json_val) = serde_json::from_str::<Value>(&cleaned_line) {
+            rec
+        } else if let Ok(json_val) = serde_json::from_str::<Value>(&cleaned_line) {
+            // 2. Fallback - Generic JSON: Eğer SUTS değilse, genel bir JSON olabilir mi?
             if let Some(map) = json_val.as_object() {
                 let message = map.get("message").and_then(Value::as_str).unwrap_or(&cleaned_line).to_string();
                 let severity = map.get("level").or_else(|| map.get("severity")).and_then(Value::as_str).unwrap_or("INFO").to_uppercase();
                 let ts = map.get("ts").or_else(|| map.get("timestamp")).and_then(Value::as_str).unwrap_or("").to_string();
                 
                 let mut attributes = HashMap::new();
+                
+                // Generic JSON içindeki tüm alanları attributes'a at (Veri Kaybını Önle)
+                for (k, v) in map {
+                    if k != "message" && k != "level" && k != "severity" && k != "ts" {
+                        attributes.insert(k.clone(), v.clone());
+                    }
+                }
+                
                 if let Some(cid) = extract_call_id_from_json(map) {
                     if !cid.is_empty() {
                        attributes.insert("sip.call_id".to_string(), Value::String(cid.to_string()));
                     }
                 }
 
-                return LogRecord {
-                    schema_v: "1.0.0".to_string(), // Gelen log SUTS olmadığından, onu SUTS'a dönüştürüyoruz
+                LogRecord {
+                    schema_v: "1.0.0".to_string(),
                     ts: if ts.is_empty() { chrono::Utc::now().to_rfc3339() } else { ts },
                     severity, tenant_id: "default".to_string(),
                     resource: ResourceContext {
                         service_name: container_name.to_string(), service_version: "unknown".to_string(),
                         service_env: "production".to_string(), host_name: Some(self.node_name.clone()),
                     },
-                    trace_id: None, span_id: None, event: "JSON_LOG_PARSED".to_string(), // Bu olayın SUTS olmadığını belirt
+                    trace_id: None, span_id: None, event: "JSON_LOG_PARSED".to_string(),
                     message, attributes,
-                };
+                }
+            } else {
+                // JSON ama obje değil
+                self.create_raw_record(cleaned_line, container_name, stream_type)
             }
-        }
+        } else {
+             // 3. Fallback - Raw Text: En son çare, düz metin olarak işle
+            self.create_raw_record(cleaned_line, container_name, stream_type)
+        };
 
-        // 3. Fallback - Raw Text: En son çare, düz metin olarak işle
+        // --- KRİTİK: AKILLI TEMİZLİK VE ZENGİNLEŞTİRME (The Brain Çağrısı) ---
+        // Bu satır sayesinde CDR recursive JSON'ları ve Postgres hataları düzelir.
+        record.sanitize_and_enrich();
+        // ---------------------------------------------------------------------
+
+        record
+    }
+
+    fn create_raw_record(&self, line: String, container_name: &str, stream_type: &str) -> LogRecord {
         let severity = if stream_type == "stderr" { "ERROR" } else { "INFO" };
         LogRecord {
             schema_v: "1.0.0".to_string(), ts: chrono::Utc::now().to_rfc3339(),
@@ -91,13 +110,13 @@ impl DockerIngestor {
                 service_name: container_name.to_string(), service_version: "unknown".to_string(),
                 service_env: "production".to_string(), host_name: Some(self.node_name.clone()),
             },
-            trace_id: None, span_id: None, event: "RAW_LOG_OUTPUT".to_string(), // Bu olayın ham metin olduğunu belirt
-            message: cleaned_line, attributes: HashMap::new(),
+            trace_id: None, span_id: None, event: "RAW_LOG_OUTPUT".to_string(),
+            message: line, attributes: HashMap::new(),
         }
     }
 }
 
-// Geri kalan kod (async_trait impl) aynı kalır.
+// Geri kalan kod (async_trait impl)
 #[async_trait]
 impl LogIngestor for DockerIngestor {
     async fn start(&self) -> Result<()> {

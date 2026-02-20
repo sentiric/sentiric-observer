@@ -2,17 +2,17 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>SENTIRIC | PANOPTICON</title>
-    <!-- CSS linkleri aynı kalacak -->
+    <title>SENTIRIC | PANOPTICON V4.1.0</title>
+    <!-- CSS linkleri -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>👁️</text></svg>">
     <link rel="stylesheet" href="/ui/css/theme.css">
     <link rel="stylesheet" href="/ui/css/layout.css">
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;600&display=swap" rel="stylesheet">
 </head>
 <body>
-    <!-- HTML içeriği aynı kalacak (Header, Visualizer, Matrix Console) -->
     <div id="app">
         <header>
-            <div class="brand">👁️ SENTIRIC OBSERVER <span style="opacity:0.5; font-size:10px;">PRO</span></div>
+            <div class="brand">👁️ SENTIRIC OBSERVER <span style="opacity:0.5; font-size:10px;">SOVEREIGN</span></div>
             <div class="stats-bar">
                 <span><span id="ws-status" class="status-indicator offline"></span>GATEWAY</span>
                 <span>PPS: <b id="pps-val" style="color:#fff">0</b></span>
@@ -24,6 +24,31 @@
             <canvas id="pulse-chart"></canvas>
             <div id="overlay-stats">
                 <div>LIVE TRAFFIC</div>
+            </div>
+        </section>
+
+        <!-- YENİ GELİŞMİŞ FİLTRE ÇUBUĞU -->
+        <section id="filter-bar">
+            <div class="filter-group">
+                <input type="text" id="filter-svc" class="filter-input" placeholder="Service (e.g. sbc)" style="width: 100px;">
+            </div>
+            <div class="filter-group">
+                <input type="text" id="filter-trace" class="filter-input" placeholder="Trace ID / Call ID" style="width: 140px;">
+            </div>
+            <div class="filter-group">
+                <select id="filter-level" class="filter-input">
+                    <option value="ALL">ALL LEVELS</option>
+                    <option value="WARN">WARN+</option>
+                    <option value="ERROR">ERROR only</option>
+                </select>
+            </div>
+            <div class="filter-group" style="flex:1;">
+                <input type="text" id="filter-msg" class="filter-input" placeholder="Search Message..." style="width: 100%;">
+            </div>
+            <div class="filter-group">
+                <label style="display:flex; align-items:center; gap:5px; cursor:pointer; color:var(--text-muted);">
+                    <input type="checkbox" id="chk-dedup" checked> <span>Group Dupes</span>
+                </label>
             </div>
         </section>
 
@@ -44,7 +69,6 @@
         </nav>
     </div>
 
-    <!-- DÜZELTME: Sadece config ve app.js çağrılıyor. Visualizer app.js içinde import ediliyor. -->
     <script src="/ui/js/config.js"></script>
     <script type="module" src="/ui/js/app.js"></script>
 </body>

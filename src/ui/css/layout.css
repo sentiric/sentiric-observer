@@ -14,6 +14,21 @@ header {
 }
 canvas { width: 100%; height: 100%; display: block; }
 
+/* --- YENİ FİLTRE ÇUBUĞU (REVOLUTION) --- */
+#filter-bar {
+    display: flex; gap: 10px; padding: 6px 15px; background: var(--bg-panel);
+    border-bottom: 1px solid var(--border-color); font-size: 11px;
+    align-items: center;
+}
+.filter-group { display: flex; align-items: center; gap: 5px; }
+.filter-input {
+    background: #050505; border: 1px solid #30363d; color: var(--text-main);
+    padding: 4px 8px; border-radius: 3px; font-family: var(--font-mono); font-size: 10px;
+    transition: border-color 0.2s;
+}
+.filter-input:focus { border-color: #58a6ff; outline: none; }
+.filter-input::placeholder { color: #484f58; }
+
 #matrix-console { flex: 1; position: relative; background: var(--bg-base); overflow: hidden; }
 #console-wrapper { position: absolute; top: 0; left: 0; right: 0; bottom: 0; overflow-y: scroll; overflow-x: hidden; }
 #console-content { width: 100%; position: relative; }
@@ -33,13 +48,20 @@ canvas { width: 100%; height: 100%; display: block; }
 
 /* Column Specifics */
 .col-ts { opacity: 0.6; font-size: 10px; }
-.col-svc { color: #d2a8ff; overflow: hidden; text-overflow: ellipsis; }
+.col-svc { color: #d2a8ff; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
 .col-evt { color: #79c0ff; overflow: hidden; text-overflow: ellipsis; }
-.col-msg { color: var(--text-main); overflow: hidden; text-overflow: ellipsis; }
+.col-msg { color: var(--text-main); overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; }
 
 /* Special Rows */
-.row-packet { background: rgba(46, 160, 67, 0.05); } /* Network Packet Highlight */
+.row-packet { background: rgba(46, 160, 67, 0.05); } 
 .row-error { background: rgba(248, 81, 73, 0.05); }
+
+/* Deduplication Badge */
+.dup-badge { 
+    background: #30363d; color: #fff; border-radius: 10px; padding: 0 6px; 
+    font-size: 9px; margin-left: 8px; border: 1px solid #8b949e;
+    font-weight: bold;
+}
 
 #control-plane { 
     display: flex; justify-content: space-between; align-items: center;

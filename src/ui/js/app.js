@@ -3,54 +3,64 @@ import { visualizer } from './visualizer.js';
 
 const state = {
     logs: [],
+    filteredLogs: [], // Filtrelenmiş ve işlenmiş görünüm
     pps: 0,
     newLogs: false,
     autoScroll: true,
     isConnected: false,
+    filters: {
+        service: '',
+        trace: '',
+        level: 'ALL',
+        msg: '',
+        dedup: true
+    }
 };
 
 const ui = {
     wrapper: document.getElementById('console-wrapper'),
     content: document.getElementById('console-content'),
-    statusIndicator: document.getElementById('ws-status'),
+    
+    // Filter Elements
+    inpService: document.getElementById('filter-svc'),
+    inpTrace: document.getElementById('filter-trace'),
+    selLevel: document.getElementById('filter-level'),
+    inpMsg: document.getElementById('filter-msg'),
+    chkDedup: document.getElementById('chk-dedup'),
 
     init() {
-        // Kontrol butonları
-        const controlsRight = document.querySelector('.controls-right');
-        if(controlsRight) {
-            // İndirme Butonu
-            const exportBtn = document.createElement('button');
-            exportBtn.innerText = "DOWNLOAD LOGS";
-            exportBtn.className = "btn-control";
-            exportBtn.onclick = () => this.exportLogs();
-            controlsRight.appendChild(exportBtn);
-        }
+        // Event Listeners for Filters
+        const applyFilters = () => { 
+            this.processLogs(); 
+            this.renderVirtual();
+        };
         
+        if(this.inpService) this.inpService.addEventListener('input', applyFilters);
+        if(this.inpTrace) this.inpTrace.addEventListener('input', applyFilters);
+        if(this.selLevel) this.selLevel.addEventListener('change', applyFilters);
+        if(this.inpMsg) this.inpMsg.addEventListener('input', applyFilters);
+        if(this.chkDedup) this.chkDedup.addEventListener('change', applyFilters);
+
         const scrollBtn = document.getElementById('btn-scroll');
         if(scrollBtn) scrollBtn.onclick = () => this.toggleAutoScroll();
 
         // Render Loop
         requestAnimationFrame(() => this.loop());
         
-        // Stats Interval (1 saniye)
+        // Stats Interval (1 sn)
         setInterval(() => {
             const ppsEl = document.getElementById('pps-val');
             const totalEl = document.getElementById('total-logs-val');
-            
             if(ppsEl) ppsEl.innerText = state.pps;
             if(totalEl) totalEl.innerText = state.logs.length;
-            
-            // Grafiğe veri bas
             visualizer.pushData(state.pps); 
-            
-            // Sıfırla
             state.pps = 0;
         }, 1000);
     },
 
     loop() {
-        // Sadece yeni veri varsa render et (CPU tasarrufu)
         if(state.newLogs) {
+            this.processLogs(); // Filtrele ve Dedup Yap
             this.renderVirtual();
             state.newLogs = false;
         }
@@ -59,67 +69,134 @@ const ui = {
         requestAnimationFrame(() => this.loop());
     },
 
+    // Filtreleme ve Gruplama Mantığı (The Engine)
+    processLogs() {
+        state.filters.service = this.inpService.value.toLowerCase();
+        state.filters.trace = this.inpTrace.value.toLowerCase();
+        state.filters.level = this.selLevel.value;
+        state.filters.msg = this.inpMsg.value.toLowerCase();
+        state.filters.dedup = this.chkDedup.checked;
+
+        // 1. Filtering
+        let temp = state.logs.filter(log => {
+            // Service Filter
+            if (state.filters.service && !log.resource['service.name'].toLowerCase().includes(state.filters.service)) return false;
+            
+            // Trace/Call ID Filter (Hem trace_id hem attributes içinde ara)
+            if (state.filters.trace) {
+                const tid = (log.trace_id || '').toLowerCase();
+                const cid = (log.attributes['sip.call_id'] || '').toLowerCase();
+                if (!tid.includes(state.filters.trace) && !cid.includes(state.filters.trace)) return false;
+            }
+
+            // Message Filter
+            if (state.filters.msg && !log.message.toLowerCase().includes(state.filters.msg)) return false;
+
+            // Severity Filter
+            if (state.filters.level !== 'ALL') {
+                const levels = ['DEBUG', 'INFO', 'WARN', 'ERROR', 'FATAL'];
+                const logIdx = levels.indexOf(log.severity);
+                const filterIdx = levels.indexOf(state.filters.level);
+                if (logIdx < filterIdx) return false;
+            }
+            return true;
+        });
+
+        // 2. Deduplication (Visual Grouping)
+        // Arka arkaya gelen aynı mesajları tek satıra indir
+        if (state.filters.dedup) {
+            const deduped = [];
+            let lastLog = null;
+            
+            for (const log of temp) {
+                if (lastLog && 
+                    lastLog.message === log.message && 
+                    lastLog.resource['service.name'] === log.resource['service.name'] &&
+                    lastLog.severity === log.severity) {
+                    
+                    lastLog._count = (lastLog._count || 1) + 1;
+                    // Zaman damgasını güncellemiyoruz ki ilki görülsün, ama isterseniz sonuncusu da olabilir.
+                } else {
+                    // Yeni bir kopya oluştur ki orijinal array bozulmasın
+                    const newEntry = { ...log, _count: 1 };
+                    deduped.push(newEntry);
+                    lastLog = newEntry;
+                }
+            }
+            state.filteredLogs = deduped;
+        } else {
+            state.filteredLogs = temp;
+        }
+    },
+
     renderVirtual() {
         if (!this.wrapper || !this.content) return;
-        const totalLogs = state.logs.length;
-        const rowHeight = 24; // CSS ile aynı olmalı
+        const data = state.filteredLogs;
+        const totalLogs = data.length;
+        const rowHeight = 24; 
         const scrollTop = this.wrapper.scrollTop;
         const visibleCount = Math.ceil(this.wrapper.clientHeight / rowHeight);
         
-        // Görünür alanın biraz üstünü ve altını render et (Buffer)
         const startIndex = Math.floor(scrollTop / rowHeight);
         const start = Math.max(0, startIndex - 5);
         const end = Math.min(totalLogs, startIndex + visibleCount + 5);
 
-        // İçerik alanının toplam yüksekliğini ayarla ki scrollbar doğru çalışsın
         this.content.style.height = `${totalLogs * rowHeight}px`;
         
         let html = '';
         for (let i = start; i < end; i++) {
-            html += this.createRow(state.logs[i], i * rowHeight);
+            html += this.createRow(data[i], i * rowHeight);
         }
         this.content.innerHTML = html;
     },
 
     createRow(log, top) {
-        const time = log.ts.split('T')[1].split('.')[0]; // Sadece saati al
+        const time = log.ts.split('T')[1].split('.')[0];
         const severity = log.severity || 'INFO';
         
-        // SIP/RTP Methodlarına göre renk ata
         let badgeClass = `bg-${severity}`;
         let method = severity;
-        
-        // Attributes kontrolü - Artık akıllı
         let details = "";
         
+        // Attributes Logic
         if (log.attributes) {
             if (log.attributes['sip.method']) {
                 method = log.attributes['sip.method'];
                 badgeClass = `sip-${method}`;
-                const cid = log.attributes['sip.call_id'] || '';
-                if(cid) details += `<span style="opacity:0.5; font-size:9px; margin-left:5px;">CID:${cid.slice(-4)}</span>`;
             } else if (log.attributes['rtp.payload_type']) {
                 method = "RTP";
                 badgeClass = "bg-INFO";
-                details += `<span style="color:#00ffa3; font-size:9px; margin-left:5px;">PT:${log.attributes['rtp.payload_type']}</span>`;
+            }
+            
+            // Call ID Badge
+            const cid = log.trace_id || log.attributes['sip.call_id'];
+            if(cid) details += `<span style="opacity:0.5; font-size:9px; margin-left:5px; border:1px solid #30363d; padding:0 3px; border-radius:2px;">${cid.slice(-4)}</span>`;
+            
+            // Port Details
+            if (log.attributes['rtp.port']) {
+                 details += `<span style="color:#79c0ff; font-size:9px; margin-left:3px;">:${log.attributes['rtp.port']}</span>`;
             }
         }
 
         const eventColor = log.event.includes('PACKET') ? '#00ffa3' : '#79c0ff';
-        
-        // ================== KRİTİK UI DÜZELTMESİ ==================
         const serviceName = log.resource ? (log.resource['service.name'] || 'sys') : 'sys';
-        // =========================================================
 
-        return `<div class="log-row" style="position:absolute; top:${top}px; width:100%;">
+        // Deduplication Badge
+        let countBadge = "";
+        if (log._count && log._count > 1) {
+            countBadge = `<span class="dup-badge">x${log._count}</span>`;
+        }
+        
+        // Error Row Highlight
+        const rowClass = (severity === 'ERROR' || severity === 'FATAL') ? 'log-row row-error' : 'log-row';
+
+        return `<div class="${rowClass}" style="position:absolute; top:${top}px; width:100%;">
             <span class="col-ts">${time}</span>
             <span class="badge ${badgeClass}">${method}</span>
-            <span class="col-svc" title="${serviceName}">
-                ${serviceName}
-            </span>
+            <span class="col-svc" title="${serviceName}">${serviceName}</span>
             <span class="col-evt" style="color:${eventColor}" title="${log.event}">${log.event}</span>
             <span class="col-msg" title="${this.escapeHtml(log.message)}">
-                ${this.escapeHtml(log.message)} ${details}
+                ${this.escapeHtml(log.message)} ${details} ${countBadge}
             </span>
         </div>`;
     },
@@ -139,38 +216,20 @@ const ui = {
         if(btn) btn.innerText = `AUTO-SCROLL [${state.autoScroll ? 'ON' : 'OFF'}]`;
     },
 
-    exportLogs() {
-        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state.logs, null, 2));
-        const node = document.createElement('a');
-        node.setAttribute("href", dataStr);
-        node.setAttribute("download", `sentiric_logs_${new Date().toISOString()}.json`);
-        document.body.appendChild(node);
-        node.click();
-        node.remove();
-    },
-
     setConnectionStatus(connected) {
         state.isConnected = connected;
         const el = document.getElementById('ws-status');
-        if(el) {
-            el.className = connected ? 'status-indicator online' : 'status-indicator offline';
-        }
+        if(el) el.className = connected ? 'status-indicator online' : 'status-indicator offline';
     }
 };
 
-// WebSocket logic
 const stream = new LogStream(CONFIG.WS_URL, 
-    // On Message
     (log) => {
         state.logs.push(log);
         state.pps++;
         state.newLogs = true;
-        // Memory Protection: UI tarafında da 10k logdan fazlasını tutma
-        if (state.logs.length > CONFIG.MAX_LOGS) {
-            state.logs.shift(); // En eskiyi at
-        }
+        if (state.logs.length > CONFIG.MAX_LOGS) state.logs.shift();
     },
-    // On Status Change
     (status) => ui.setConnectionStatus(status)
 );
 

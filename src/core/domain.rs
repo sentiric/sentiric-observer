@@ -37,9 +37,7 @@ pub struct LogRecord {
     pub attributes: HashMap<String, Value>,
 }
 
-// ================== KRİTİK DÜZELTME ==================
-// Serde'ye JSON'daki noktalı alan adlarını nasıl Rust struct alanlarına
-// eşleştireceğini bildiren 'rename' direktifleri eklendi.
+// Resource Context - Dotted fields support via serde rename
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResourceContext {
     #[serde(rename = "service.name")]
@@ -51,8 +49,6 @@ pub struct ResourceContext {
     #[serde(rename = "host.name")]
     pub host_name: Option<String>,
 }
-// =======================================================
-
 
 // --- VALIDATION LOGIC ---
 
@@ -67,7 +63,7 @@ fn validate_severity(severity: &str) -> Result<(), validator::ValidationError> {
     }
 }
 
-// --- CONSTRUCTOR ---
+// --- INTELLIGENCE LAYER (YENİ EKLENEN KISIM) ---
 
 impl LogRecord {
     /// Sistem içi (Observer'ın kendi logları) için hızlı oluşturucu
@@ -91,6 +87,66 @@ impl LogRecord {
             event: event.to_string(),
             message: msg.to_string(),
             attributes: attrs,
+        }
+    }
+
+    /// Logu temizler, zenginleştirir ve hataları düzeltir.
+    /// Bu fonksiyon "Kirli Veri" ile savaşan ana mekanizmadır.
+    pub fn sanitize_and_enrich(&mut self) {
+        // 1. Recursive JSON Parsing (CDR Service Fix)
+        // Eğer message bir JSON string ise, onu parse et ve attributes'a ekle.
+        if self.message.trim().starts_with('{') {
+            // Serde_json ile iç içe string'i çözmeye çalış
+            if let Ok(parsed) = serde_json::from_str::<HashMap<String, Value>>(&self.message) {
+                // İçerideki alanları ana attributes'a taşı (Flattening)
+                for (k, v) in parsed {
+                    // Message alanını ezmemek için özel kontrol
+                    if k == "msg" || k == "message" {
+                        if let Some(s) = v.as_str() {
+                            self.message = s.to_string();
+                        }
+                    } else if k == "level" || k == "severity" {
+                        // Level override yapma, orijinal container logu daha güvenilirdir genelde
+                    } else {
+                        self.attributes.insert(k.clone(), v);
+                    }
+                }
+                
+                // Event'i güncelle (eğer içeride varsa)
+                if let Some(evt) = self.attributes.get("event_type").and_then(|v| v.as_str()) {
+                    self.event = evt.to_uppercase().replace('.', "_");
+                }
+            }
+        }
+
+        // 2. Trace ID Promotion
+        // Eğer trace_id yoksa ama attributes içinde call_id varsa, onu trace_id yap.
+        if self.trace_id.is_none() {
+            let candidates = ["sip.call_id", "call_id", "Call-ID", "callid"];
+            for key in candidates {
+                if let Some(val) = self.attributes.get(key).and_then(|v| v.as_str()) {
+                    if !val.is_empty() && val != "null" {
+                        self.trace_id = Some(val.to_string());
+                        break;
+                    }
+                }
+            }
+        }
+
+        // 3. Heuristic Severity Adjustment (Postgres Noise Reduction)
+        // Postgres checkpoint loglarını ERROR'dan INFO'ya çek.
+        if self.resource.service_name.contains("postgres") && self.severity == "ERROR" {
+            let msg_lower = self.message.to_lowercase();
+            if msg_lower.contains("checkpoint starting") || msg_lower.contains("checkpoint complete") {
+                self.severity = "INFO".to_string();
+                self.event = "DB_CHECKPOINT".to_string();
+            }
+        }
+
+        // 4. Raft/Discovery Noise Reduction
+        // Sürekli tekrar eden checksum loglarını etiketle (UI'da gruplamak için)
+        if self.resource.service_name.contains("discovery") && self.message.contains("verification checksum OK") {
+            self.event = "RAFT_HEALTH_CHECK".to_string();
         }
     }
 }
