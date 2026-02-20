@@ -4,57 +4,12 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use pcap::{Capture, Device, Linktype};
 use serde_json::Value;
-use std::collections::{HashMap, VecDeque};
-use std::hash::{Hash, Hasher};
-use std::time::{Duration, Instant};
+use std::collections::HashMap;
 use tokio::sync::mpsc::Sender;
 use tracing::{error, info};
 
-const DEDUP_CACHE_DURATION_MS: u64 = 200;
-const DEDUP_CACHE_CAPACITY: usize = 2048;
-
-struct PacketDedupCache {
-    entries: VecDeque<(u64, Instant)>,
-    duration: Duration,
-}
-
-impl PacketDedupCache {
-    fn new() -> Self {
-        Self {
-            entries: VecDeque::with_capacity(DEDUP_CACHE_CAPACITY),
-            duration: Duration::from_millis(DEDUP_CACHE_DURATION_MS),
-        }
-    }
-
-    fn check_and_insert(&mut self, payload: &[u8]) -> bool {
-        let now = Instant::now();
-        self.cleanup(now);
-
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        payload.hash(&mut hasher);
-        let hash = hasher.finish();
-
-        if self.entries.iter().any(|(h, _)| *h == hash) {
-            true
-        } else {
-            if self.entries.len() == self.entries.capacity() {
-                self.entries.pop_front();
-            }
-            self.entries.push_back((hash, now));
-            false
-        }
-    }
-
-    fn cleanup(&mut self, now: Instant) {
-        while let Some((_, ts)) = self.entries.front() {
-            if now.duration_since(*ts) > self.duration {
-                self.entries.pop_front();
-            } else {
-                break;
-            }
-        }
-    }
-}
+// DEDUPLICATION MEKANİZMASI VİZYON İLE ÇELİŞTİĞİ İÇİN TAMAMEN KALDIRILDI.
+// Amaç, SIP retransmisyonları dahil tüm ağ olaylarını yakalamaktır.
 
 pub struct NetworkSniffer {
     interface: String,
@@ -193,14 +148,11 @@ impl LogIngestor for NetworkSniffer {
         };
 
         tokio::task::spawn_blocking(move || {
-            let mut dedup_cache = PacketDedupCache::new();
             let mut dropped_packets = 0;
             loop {
                 match cap.next_packet() {
                     Ok(packet) => {
                         if let Some(payload) = Self::parse_headers(&packet, link_type) {
-                            if dedup_cache.check_and_insert(&payload) { continue; } // DEDUPLICATION ON PAYLOAD
-                            
                             if let Some(log) = sniffer_logic.process_payload(&payload, packet.header.len) {
                                 match tx_clone.try_send(log) {
                                     Ok(_) => { if dropped_packets > 0 { info!("🕸️ Sniffer Recovered ({} dropped).", dropped_packets); dropped_packets = 0; } },

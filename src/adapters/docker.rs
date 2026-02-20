@@ -1,6 +1,6 @@
 use crate::core::domain::{LogRecord, ResourceContext};
 use crate::ports::LogIngestor;
-use crate::utils::parser; // ANSI cleaner
+use crate::utils::parser;
 use anyhow::Result;
 use async_trait::async_trait;
 use bollard::container::{ListContainersOptions, LogsOptions};
@@ -13,11 +13,12 @@ use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 use tracing::{error, info, warn};
 
+// Büyük/küçük harf duyarsız, birden çok anahtar deneyen, daha sağlam bir fonksiyon.
 fn extract_call_id_from_json(map: &serde_json::Map<String, Value>) -> Option<&str> {
-    const CALL_ID_KEYS: [&str; 3] = ["call_id", "callid", "sip.call_id"];
-    for (key, value) in map {
-        if CALL_ID_KEYS.iter().any(|&k| k.eq_ignore_ascii_case(key)) {
-            if let Some(s) = value.as_str() {
+    const CALL_ID_KEYS: [&str; 4] = ["call_id", "callid", "sip.call_id", "CallID"];
+    for key in CALL_ID_KEYS {
+        if let Some(value) = map.iter().find(|(k, _)| k.eq_ignore_ascii_case(key)) {
+            if let Some(s) = value.1.as_str() {
                 return Some(s);
             }
         }
@@ -58,7 +59,9 @@ impl DockerIngestor {
                 
                 let mut attributes = HashMap::new();
                 if let Some(cid) = extract_call_id_from_json(map) {
-                    attributes.insert("sip.call_id".to_string(), Value::String(cid.to_string()));
+                    if !cid.is_empty() {
+                       attributes.insert("sip.call_id".to_string(), Value::String(cid.to_string()));
+                    }
                 }
 
                 return LogRecord {
