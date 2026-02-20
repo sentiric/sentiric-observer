@@ -2,203 +2,219 @@ import { LogStream } from './websocket.js';
 import { visualizer } from './visualizer.js';
 
 const state = {
-    logs: [],
-    filteredLogs: [], // Filtrelenmiş ve işlenmiş görünüm
+    logs: [],          // Tüm hafıza (Ring Buffer mantığıyla)
+    filteredLogs: [],  // Ekranda gösterilecekler
     pps: 0,
-    newLogs: false,
+    isPaused: false,
+    selectedLog: null, // Detay panelinde seçili olan
     autoScroll: true,
     isConnected: false,
     filters: {
         service: '',
         trace: '',
         level: 'ALL',
-        msg: '',
-        dedup: true
+        msg: ''
     }
 };
 
 const ui = {
     wrapper: document.getElementById('console-wrapper'),
     content: document.getElementById('console-content'),
+    inspector: document.getElementById('inspector-panel'),
+    detailContent: document.getElementById('inspector-detail'),
     
-    // Filter Elements
+    // Inputs
     inpService: document.getElementById('filter-svc'),
     inpTrace: document.getElementById('filter-trace'),
-    selLevel: document.getElementById('filter-level'),
     inpMsg: document.getElementById('filter-msg'),
-    chkDedup: document.getElementById('chk-dedup'),
+    selLevel: document.getElementById('filter-level'),
 
     init() {
-        // Event Listeners for Filters
-        const applyFilters = () => { 
-            this.processLogs(); 
-            this.renderVirtual();
-        };
+        // Event Listeners
+        const apply = () => { this.processLogs(); this.renderVirtual(); };
         
-        if(this.inpService) this.inpService.addEventListener('input', applyFilters);
-        if(this.inpTrace) this.inpTrace.addEventListener('input', applyFilters);
-        if(this.selLevel) this.selLevel.addEventListener('change', applyFilters);
-        if(this.inpMsg) this.inpMsg.addEventListener('input', applyFilters);
-        if(this.chkDedup) this.chkDedup.addEventListener('change', applyFilters);
+        this.inpService.addEventListener('input', apply);
+        this.inpTrace.addEventListener('input', apply);
+        this.inpMsg.addEventListener('input', apply);
+        this.selLevel.addEventListener('change', apply);
 
-        const scrollBtn = document.getElementById('btn-scroll');
-        if(scrollBtn) scrollBtn.onclick = () => this.toggleAutoScroll();
+        document.getElementById('btn-pause').onclick = () => {
+            state.isPaused = !state.isPaused;
+            state.autoScroll = !state.isPaused;
+            document.getElementById('btn-pause').innerText = state.isPaused ? "RESUME" : "PAUSE";
+            document.getElementById('btn-pause').style.borderColor = state.isPaused ? "#f85149" : "#30363d";
+        };
+
+        document.getElementById('btn-close-inspector').onclick = () => {
+            this.inspector.classList.remove('open');
+            state.selectedLog = null;
+            this.renderVirtual(); // Highlight'ı kaldır
+        };
+
+        document.getElementById('btn-export').onclick = () => this.exportLogs();
+        document.getElementById('btn-copy-llm').onclick = () => this.copyForLLM();
 
         // Render Loop
         requestAnimationFrame(() => this.loop());
         
-        // Stats Interval (1 sn)
+        // Stats Interval
         setInterval(() => {
-            const ppsEl = document.getElementById('pps-val');
-            const totalEl = document.getElementById('total-logs-val');
-            if(ppsEl) ppsEl.innerText = state.pps;
-            if(totalEl) totalEl.innerText = state.logs.length;
+            document.getElementById('pps-val').innerText = state.pps;
+            document.getElementById('total-logs-val').innerText = state.logs.length;
+            document.getElementById('buffer-usage').innerText = Math.round((state.logs.length / CONFIG.MAX_LOGS) * 100) + "%";
             visualizer.pushData(state.pps); 
             state.pps = 0;
         }, 1000);
     },
 
     loop() {
-        if(state.newLogs) {
-            this.processLogs(); // Filtrele ve Dedup Yap
+        if (!state.isPaused && state.newLogs) {
+            this.processLogs();
             this.renderVirtual();
             state.newLogs = false;
         }
         
-        if (state.autoScroll && state.isConnected) this.scrollToBottom();
+        if (state.autoScroll && !state.isPaused && !state.selectedLog) {
+            this.wrapper.scrollTop = this.wrapper.scrollHeight;
+        }
         requestAnimationFrame(() => this.loop());
     },
 
-    // Filtreleme ve Gruplama Mantığı (The Engine)
     processLogs() {
-        state.filters.service = this.inpService.value.toLowerCase();
-        state.filters.trace = this.inpTrace.value.toLowerCase();
-        state.filters.level = this.selLevel.value;
-        state.filters.msg = this.inpMsg.value.toLowerCase();
-        state.filters.dedup = this.chkDedup.checked;
+        // Filtreleme Motoru
+        const f = state.filters;
+        f.service = this.inpService.value.toLowerCase();
+        f.trace = this.inpTrace.value.toLowerCase();
+        f.level = this.selLevel.value;
+        f.msg = this.inpMsg.value.toLowerCase();
 
-        // 1. Filtering
-        let temp = state.logs.filter(log => {
-            // Service Filter
-            if (state.filters.service && !log.resource['service.name'].toLowerCase().includes(state.filters.service)) return false;
+        state.filteredLogs = state.logs.filter(log => {
+            if (f.service && !log.resource['service.name'].toLowerCase().includes(f.service)) return false;
             
-            // Trace/Call ID Filter (Hem trace_id hem attributes içinde ara)
-            if (state.filters.trace) {
+            if (f.trace) {
                 const tid = (log.trace_id || '').toLowerCase();
                 const cid = (log.attributes['sip.call_id'] || '').toLowerCase();
-                if (!tid.includes(state.filters.trace) && !cid.includes(state.filters.trace)) return false;
+                if (!tid.includes(f.trace) && !cid.includes(f.trace)) return false;
             }
 
-            // Message Filter
-            if (state.filters.msg && !log.message.toLowerCase().includes(state.filters.msg)) return false;
+            if (f.msg && !log.message.toLowerCase().includes(f.msg)) return false;
 
-            // Severity Filter
-            if (state.filters.level !== 'ALL') {
+            if (f.level !== 'ALL') {
                 const levels = ['DEBUG', 'INFO', 'WARN', 'ERROR', 'FATAL'];
-                const logIdx = levels.indexOf(log.severity);
-                const filterIdx = levels.indexOf(state.filters.level);
-                if (logIdx < filterIdx) return false;
+                if (levels.indexOf(log.severity) < levels.indexOf(f.level)) return false;
             }
             return true;
         });
-
-        // 2. Deduplication (Visual Grouping)
-        // Arka arkaya gelen aynı mesajları tek satıra indir
-        if (state.filters.dedup) {
-            const deduped = [];
-            let lastLog = null;
-            
-            for (const log of temp) {
-                if (lastLog && 
-                    lastLog.message === log.message && 
-                    lastLog.resource['service.name'] === log.resource['service.name'] &&
-                    lastLog.severity === log.severity) {
-                    
-                    lastLog._count = (lastLog._count || 1) + 1;
-                    // Zaman damgasını güncellemiyoruz ki ilki görülsün, ama isterseniz sonuncusu da olabilir.
-                } else {
-                    // Yeni bir kopya oluştur ki orijinal array bozulmasın
-                    const newEntry = { ...log, _count: 1 };
-                    deduped.push(newEntry);
-                    lastLog = newEntry;
-                }
-            }
-            state.filteredLogs = deduped;
-        } else {
-            state.filteredLogs = temp;
-        }
     },
 
     renderVirtual() {
         if (!this.wrapper || !this.content) return;
         const data = state.filteredLogs;
-        const totalLogs = data.length;
-        const rowHeight = 24; 
+        const total = data.length;
+        const rowH = 26; // CSS ile eşleşmeli
+        const visibleRows = Math.ceil(this.wrapper.clientHeight / rowH);
         const scrollTop = this.wrapper.scrollTop;
-        const visibleCount = Math.ceil(this.wrapper.clientHeight / rowHeight);
+        const startIdx = Math.floor(scrollTop / rowH);
         
-        const startIndex = Math.floor(scrollTop / rowHeight);
-        const start = Math.max(0, startIndex - 5);
-        const end = Math.min(totalLogs, startIndex + visibleCount + 5);
+        const renderStart = Math.max(0, startIdx - 5);
+        const renderEnd = Math.min(total, startIdx + visibleRows + 5);
 
-        this.content.style.height = `${totalLogs * rowHeight}px`;
+        this.content.style.height = `${total * rowH}px`;
         
         let html = '';
-        for (let i = start; i < end; i++) {
-            html += this.createRow(data[i], i * rowHeight);
+        for (let i = renderStart; i < renderEnd; i++) {
+            const log = data[i];
+            const isSel = state.selectedLog === log;
+            html += this.createRow(log, i * rowH, isSel);
         }
+        
+        // Event Delegation yerine string onclick kullanmıyoruz, 
+        // wrapper üzerine listener ekliyoruz (daha performanslı).
         this.content.innerHTML = html;
     },
 
-    createRow(log, top) {
-        const time = log.ts.split('T')[1].split('.')[0];
+    createRow(log, top, isSelected) {
+        const time = log.ts.split('T')[1].split('.')[0]; // HH:MM:SS
         const severity = log.severity || 'INFO';
+        const svc = log.resource['service.name'] || 'sys';
+        const evt = log.event || 'UNKNOWN';
         
-        let badgeClass = `bg-${severity}`;
-        let method = severity;
-        let details = "";
-        
-        // Attributes Logic
-        if (log.attributes) {
-            if (log.attributes['sip.method']) {
-                method = log.attributes['sip.method'];
-                badgeClass = `sip-${method}`;
-            } else if (log.attributes['rtp.payload_type']) {
-                method = "RTP";
-                badgeClass = "bg-INFO";
-            }
-            
-            // Call ID Badge
-            const cid = log.trace_id || log.attributes['sip.call_id'];
-            if(cid) details += `<span style="opacity:0.5; font-size:9px; margin-left:5px; border:1px solid #30363d; padding:0 3px; border-radius:2px;">${cid.slice(-4)}</span>`;
-            
-            // Port Details
-            if (log.attributes['rtp.port']) {
-                 details += `<span style="color:#79c0ff; font-size:9px; margin-left:3px;">:${log.attributes['rtp.port']}</span>`;
-            }
+        let tagsHtml = '';
+        if (log.smart_tags) {
+            log.smart_tags.forEach(tag => {
+                tagsHtml += `<span class="tag tag-${tag}">${tag}</span>`;
+            });
         }
 
-        const eventColor = log.event.includes('PACKET') ? '#00ffa3' : '#79c0ff';
-        const serviceName = log.resource ? (log.resource['service.name'] || 'sys') : 'sys';
-
-        // Deduplication Badge
-        let countBadge = "";
-        if (log._count && log._count > 1) {
-            countBadge = `<span class="dup-badge">x${log._count}</span>`;
-        }
+        const rowClass = `log-row ${isSelected ? 'selected' : ''} ${severity === 'ERROR' ? 'row-error' : ''}`;
         
-        // Error Row Highlight
-        const rowClass = (severity === 'ERROR' || severity === 'FATAL') ? 'log-row row-error' : 'log-row';
-
-        return `<div class="${rowClass}" style="position:absolute; top:${top}px; width:100%;">
+        // Data attribute ile indexi sakla
+        return `<div class="${rowClass}" style="position:absolute; top:${top}px; width:100%;" data-id="${log.ts}">
             <span class="col-ts">${time}</span>
-            <span class="badge ${badgeClass}">${method}</span>
-            <span class="col-svc" title="${serviceName}">${serviceName}</span>
-            <span class="col-evt" style="color:${eventColor}" title="${log.event}">${log.event}</span>
-            <span class="col-msg" title="${this.escapeHtml(log.message)}">
-                ${this.escapeHtml(log.message)} ${details} ${countBadge}
-            </span>
+            <span class="col-lvl badge bg-${severity}">${severity}</span>
+            <span class="col-svc" style="color:#d2a8ff;">${svc}</span>
+            <span class="col-evt" style="color:#79c0ff;">${evt}</span>
+            <span class="col-msg">${this.escapeHtml(log.message)} ${tagsHtml}</span>
         </div>`;
+    },
+
+    // Detay Paneli ve Focus Logic
+    handleLogClick(ts) {
+        const log = state.filteredLogs.find(l => l.ts === ts);
+        if (!log) return;
+
+        state.selectedLog = log;
+        state.isPaused = true; // İnceleme yaparken akışı durdur
+        document.getElementById('btn-pause').innerText = "RESUME";
+        document.getElementById('btn-pause').style.borderColor = "#f85149";
+        
+        this.inspector.classList.add('open');
+        this.renderVirtual(); // Selection highlight için tekrar çiz
+
+        // JSON Pretty Print
+        const jsonStr = JSON.stringify(log, null, 2);
+        const syntaxHighlight = this.syntaxHighlight(jsonStr);
+
+        this.detailContent.innerHTML = `
+            <div style="margin-bottom:15px; border-bottom:1px solid #30363d; padding-bottom:10px;">
+                <div style="font-size:14px; color:#fff; font-weight:bold;">${log.event}</div>
+                <div style="color:#8b949e; font-size:10px;">${log.ts}</div>
+            </div>
+            
+            <div style="display:flex; gap:5px; margin-bottom:15px;">
+                <button onclick="filterByTrace('${log.trace_id}')" class="modern-input" style="flex:1; cursor:pointer;">🔍 Filter Trace</button>
+                <button onclick="filterBySvc('${log.resource['service.name']}')" class="modern-input" style="flex:1; cursor:pointer;">🔍 Filter Service</button>
+            </div>
+
+            <pre style="white-space:pre-wrap; color:#c9d1d9;">${syntaxHighlight}</pre>
+        `;
+    },
+
+    exportLogs() {
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state.filteredLogs, null, 2));
+        const node = document.createElement('a');
+        node.setAttribute("href", dataStr);
+        node.setAttribute("download", `sentiric_logs_export.json`);
+        document.body.appendChild(node);
+        node.click();
+        node.remove();
+    },
+
+    copyForLLM() {
+        // Şu anki görünümdeki tüm logları al
+        // Sadece kritik alanları seç (token tasarrufu)
+        const context = state.filteredLogs.map(l => 
+            `[${l.ts}] ${l.severity} | ${l.resource['service.name']} | ${l.event} | ${l.message} | TRACE:${l.trace_id || 'N/A'}`
+        ).join('\n');
+
+        const prompt = `Here are the system logs from Sentiric Observer. Analyze the sequence of events and identify the root cause of any errors:\n\n${context}`;
+        
+        navigator.clipboard.writeText(prompt).then(() => {
+            const btn = document.getElementById('btn-copy-llm');
+            const original = btn.innerText;
+            btn.innerText = "✅ COPIED!";
+            setTimeout(() => btn.innerText = original, 2000);
+        });
     },
 
     escapeHtml(text) {
@@ -206,21 +222,38 @@ const ui = {
         return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     },
 
-    scrollToBottom() {
-        if (this.wrapper) this.wrapper.scrollTop = this.wrapper.scrollHeight;
-    },
-
-    toggleAutoScroll() {
-        state.autoScroll = !state.autoScroll;
-        const btn = document.getElementById('btn-scroll');
-        if(btn) btn.innerText = `AUTO-SCROLL [${state.autoScroll ? 'ON' : 'OFF'}]`;
-    },
-
-    setConnectionStatus(connected) {
-        state.isConnected = connected;
-        const el = document.getElementById('ws-status');
-        if(el) el.className = connected ? 'status-indicator online' : 'status-indicator offline';
+    syntaxHighlight(json) {
+        json = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
+            var cls = 'number';
+            if (/^"/.test(match)) {
+                if (/:$/.test(match)) {
+                    cls = 'key';
+                    match = match.replace(/"/g, '').replace(/:/g, ''); // Key tırnaklarını temizle (estetik)
+                    return `<span style="color:#79c0ff">${match}</span>:`;
+                } else {
+                    cls = 'string';
+                    return `<span style="color:#a5d6ff">${match}</span>`;
+                }
+            } else if (/true|false/.test(match)) {
+                return `<span style="color:#ff7b72">${match}</span>`; // Bool
+            } else if (/null/.test(match)) {
+                return `<span style="color:#ff7b72">${match}</span>`;
+            }
+            return `<span style="color:#d2a8ff">${match}</span>`; // Number
+        });
     }
+};
+
+// Global Helpers for Inspector Buttons
+window.filterByTrace = (tid) => {
+    if(!tid) return;
+    ui.inpTrace.value = tid;
+    ui.inpTrace.dispatchEvent(new Event('input'));
+};
+window.filterBySvc = (svc) => {
+    ui.inpService.value = svc;
+    ui.inpService.dispatchEvent(new Event('input'));
 };
 
 const stream = new LogStream(CONFIG.WS_URL, 
@@ -230,8 +263,22 @@ const stream = new LogStream(CONFIG.WS_URL,
         state.newLogs = true;
         if (state.logs.length > CONFIG.MAX_LOGS) state.logs.shift();
     },
-    (status) => ui.setConnectionStatus(status)
+    (status) => {
+        state.isConnected = status;
+        const el = document.getElementById('ws-status');
+        el.innerText = status ? "CONNECTED" : "DISCONNECTED";
+        el.style.color = status ? "#2ea043" : "#f85149";
+    }
 );
+
+// Click Handler (Event Delegation)
+document.getElementById('console-content').addEventListener('click', (e) => {
+    const row = e.target.closest('.log-row');
+    if (row) {
+        const ts = row.getAttribute('data-id');
+        ui.handleLogClick(ts);
+    }
+});
 
 document.addEventListener('DOMContentLoaded', () => {
     visualizer.init(); 

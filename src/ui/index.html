@@ -2,71 +2,78 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>SENTIRIC | PANOPTICON V4.1.0</title>
-    <!-- CSS linkleri -->
+    <title>SENTIRIC | PANOPTICON [SOVEREIGN]</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>👁️</text></svg>">
     <link rel="stylesheet" href="/ui/css/theme.css">
     <link rel="stylesheet" href="/ui/css/layout.css">
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@400;600&display=swap" rel="stylesheet">
 </head>
 <body>
     <div id="app">
+        <!-- HEADER: Brand & Global Status -->
         <header>
-            <div class="brand">👁️ SENTIRIC OBSERVER <span style="opacity:0.5; font-size:10px;">SOVEREIGN</span></div>
-            <div class="stats-bar">
-                <span><span id="ws-status" class="status-indicator offline"></span>GATEWAY</span>
-                <span>PPS: <b id="pps-val" style="color:#fff">0</b></span>
-                <span>LOGS: <b id="total-logs-val" style="color:#fff">0</b></span>
+            <div class="brand">
+                <span style="font-size:18px;">👁️</span> SENTIRIC OBSERVER <span class="live-badge">LIVE</span>
+            </div>
+            <div style="display:flex; gap:20px; font-size:11px; color:#8b949e;">
+                <span>BUFFER: <b id="buffer-usage" style="color:#fff">0%</b></span>
+                <span>INGEST: <b id="pps-val" style="color:#fff">0</b> PPS</span>
+                <span>TOTAL: <b id="total-logs-val" style="color:#fff">0</b></span>
             </div>
         </header>
 
-        <section id="visualizer">
-            <canvas id="pulse-chart"></canvas>
-            <div id="overlay-stats">
-                <div>LIVE TRAFFIC</div>
-            </div>
+        <!-- DASHBOARD: Filters & Visualizer -->
+        <section id="dashboard-controls">
+            <!-- Mini Visualizer Canvas -->
+            <canvas id="pulse-chart" style="width:100px; height:30px; opacity:0.7;"></canvas>
+            
+            <div style="width: 1px; height: 20px; background: #30363d; margin: 0 10px;"></div>
+
+            <!-- Filters -->
+            <input type="text" id="filter-svc" class="modern-input" placeholder="Filter Service..." style="width: 120px;">
+            <input type="text" id="filter-trace" class="modern-input" placeholder="Trace / Call ID" style="width: 140px;">
+            <select id="filter-level" class="modern-input">
+                <option value="ALL">ALL LEVELS</option>
+                <option value="WARN">WARN+</option>
+                <option value="ERROR">ERROR</option>
+            </select>
+            <input type="text" id="filter-msg" class="modern-input" placeholder="Search Logs (Regex supported)..." style="flex:1;">
+            
+            <button id="btn-pause" class="modern-input" style="cursor:pointer; width:80px; text-align:center;">PAUSE</button>
+            <button id="btn-export" class="modern-input" style="cursor:pointer; color:#79c0ff; border-color:#79c0ff;">EXPORT</button>
         </section>
 
-        <!-- YENİ GELİŞMİŞ FİLTRE ÇUBUĞU -->
-        <section id="filter-bar">
-            <div class="filter-group">
-                <input type="text" id="filter-svc" class="filter-input" placeholder="Service (e.g. sbc)" style="width: 100px;">
+        <!-- MAIN VIEW -->
+        <section id="main-view">
+            <!-- Log Console -->
+            <div id="matrix-console">
+                <div id="console-wrapper">
+                    <div id="console-content"></div>
+                </div>
             </div>
-            <div class="filter-group">
-                <input type="text" id="filter-trace" class="filter-input" placeholder="Trace ID / Call ID" style="width: 140px;">
-            </div>
-            <div class="filter-group">
-                <select id="filter-level" class="filter-input">
-                    <option value="ALL">ALL LEVELS</option>
-                    <option value="WARN">WARN+</option>
-                    <option value="ERROR">ERROR only</option>
-                </select>
-            </div>
-            <div class="filter-group" style="flex:1;">
-                <input type="text" id="filter-msg" class="filter-input" placeholder="Search Message..." style="width: 100%;">
-            </div>
-            <div class="filter-group">
-                <label style="display:flex; align-items:center; gap:5px; cursor:pointer; color:var(--text-muted);">
-                    <input type="checkbox" id="chk-dedup" checked> <span>Group Dupes</span>
-                </label>
-            </div>
+
+            <!-- Inspector Panel (Hidden by default) -->
+            <aside id="inspector-panel">
+                <div class="inspector-header">
+                    <span>LOG INSPECTOR</span>
+                    <button id="btn-close-inspector" style="background:none; border:none; color:#fff; cursor:pointer;">✕</button>
+                </div>
+                <div id="inspector-detail" class="inspector-content">
+                    <div style="text-align:center; color:#8b949e; margin-top:50px;">Select a log line to inspect details.</div>
+                </div>
+                <div style="padding:10px; border-top:1px solid #30363d;">
+                    <button id="btn-copy-llm" class="modern-input" style="width:100%; border-color:#2ea043; color:#2ea043; cursor:pointer;">
+                        🤖 COPY CONTEXT FOR LLM
+                    </button>
+                </div>
+            </aside>
         </section>
 
-        <section id="matrix-console">
-            <div id="console-wrapper">
-                <div id="console-content"></div>
-            </div>
-        </section>
-        
-        <nav id="control-plane">
-            <div class="controls-left">
-                <span style="opacity:0.5; margin-right:10px;">MODE:</span>
-                <button id="btn-scroll" style="background:none; border:none; color:#58a6ff; cursor:pointer;">AUTO-SCROLL [ON]</button>
-            </div>
-            <div class="controls-right">
-                <button onclick="window.location.reload()" style="background:none; border:1px solid #30363d; color:#f85149; border-radius:3px; padding:2px 8px; cursor:pointer;">FLUSH MEMORY</button>
-            </div>
-        </nav>
+        <!-- FOOTER -->
+        <footer>
+            <span>STATUS: <span id="ws-status" style="color:#f85149">DISCONNECTED</span></span>
+            <span>SOVEREIGN EDITION v4.0.1</span>
+        </footer>
     </div>
 
     <script src="/ui/js/config.js"></script>

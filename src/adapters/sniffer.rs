@@ -8,9 +8,6 @@ use std::collections::HashMap;
 use tokio::sync::mpsc::Sender;
 use tracing::{error, info};
 
-// DEDUPLICATION MEKANİZMASI VİZYON İLE ÇELİŞTİĞİ İÇİN TAMAMEN KALDIRILDI.
-// Amaç, SIP retransmisyonları dahil tüm ağ olaylarını yakalamaktır.
-
 pub struct NetworkSniffer {
     interface: String,
     filter: String,
@@ -94,7 +91,12 @@ impl NetworkSniffer {
         attributes.insert("net.interface".to_string(), Value::String(self.interface.clone()));
         attributes.insert("sip.method".to_string(), Value::String(method.clone()));
         attributes.insert("sip.call_id".to_string(), Value::String(call_id.to_string()));
-        Some(self.build_log("SIP_PACKET", format!("SIP {} captured", method), attributes))
+        
+        // SIP için manuel etiketleme
+        let mut log = self.build_log("SIP_PACKET", format!("SIP {} captured", method), attributes);
+        log.smart_tags.push("SIP".to_string());
+        log.smart_tags.push("NET".to_string());
+        Some(log)
     }
 
     fn create_rtp_log(&self, pt: u8, len: u32) -> Option<LogRecord> {
@@ -102,7 +104,12 @@ impl NetworkSniffer {
         attributes.insert("net.packet_len".to_string(), Value::from(len));
         attributes.insert("rtp.payload_type".to_string(), Value::from(pt));
         attributes.insert("net.interface".to_string(), Value::String(self.interface.clone()));
-        Some(self.build_log("RTP_PACKET", format!("RTP Stream (PT: {})", pt), attributes))
+        
+        // RTP için manuel etiketleme
+        let mut log = self.build_log("RTP_PACKET", format!("RTP Stream (PT: {})", pt), attributes);
+        log.smart_tags.push("RTP".to_string());
+        log.smart_tags.push("NET".to_string());
+        Some(log)
     }
 
     fn build_log(&self, event: &str, msg: String, attributes: HashMap<String, Value>) -> LogRecord {
@@ -114,6 +121,7 @@ impl NetworkSniffer {
                 service_env: "production".to_string(), host_name: Some(self.node_name.clone()),
             },
             trace_id: None, span_id: None, event: event.to_string(), message: msg, attributes,
+            smart_tags: vec![], // <--- EKLENDİ (FIX 3) - Default boş, yukarıda dolduruyoruz
         }
     }
 }

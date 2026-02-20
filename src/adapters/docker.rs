@@ -13,7 +13,7 @@ use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 use tracing::{error, info, warn};
 
-// Bu fonksiyon yardımcı olarak kalıyor
+// Yardımcı fonksiyon
 fn extract_call_id_from_json(map: &serde_json::Map<String, Value>) -> Option<&str> {
     const CALL_ID_KEYS: [&str; 4] = ["call_id", "callid", "sip.call_id", "CallID"];
     for key in CALL_ID_KEYS {
@@ -44,23 +44,24 @@ impl DockerIngestor {
     fn process_line(&self, line: String, container_name: &str, stream_type: &str) -> LogRecord {
         let cleaned_line = parser::clean_ansi(&line);
 
-        // 1. SUTS Fast-Path: Gelen log zaten standart formatta mı?
+        // 1. SUTS Fast-Path
         let mut record = if let Ok(mut rec) = serde_json::from_str::<LogRecord>(&cleaned_line) {
-            // Observer, host.name alanını doldurarak zenginleştirme yapar.
             if rec.resource.host_name.is_none() {
                 rec.resource.host_name = Some(self.node_name.clone());
             }
+            // Zeka katmanı için boş başlat, sanitize_and_enrich dolduracak
+            if rec.smart_tags.is_empty() {
+                 rec.smart_tags = vec![];
+            }
             rec
         } else if let Ok(json_val) = serde_json::from_str::<Value>(&cleaned_line) {
-            // 2. Fallback - Generic JSON: Eğer SUTS değilse, genel bir JSON olabilir mi?
+            // 2. Generic JSON Fallback
             if let Some(map) = json_val.as_object() {
                 let message = map.get("message").and_then(Value::as_str).unwrap_or(&cleaned_line).to_string();
                 let severity = map.get("level").or_else(|| map.get("severity")).and_then(Value::as_str).unwrap_or("INFO").to_uppercase();
                 let ts = map.get("ts").or_else(|| map.get("timestamp")).and_then(Value::as_str).unwrap_or("").to_string();
                 
                 let mut attributes = HashMap::new();
-                
-                // Generic JSON içindeki tüm alanları attributes'a at (Veri Kaybını Önle)
                 for (k, v) in map {
                     if k != "message" && k != "level" && k != "severity" && k != "ts" {
                         attributes.insert(k.clone(), v.clone());
@@ -83,20 +84,18 @@ impl DockerIngestor {
                     },
                     trace_id: None, span_id: None, event: "JSON_LOG_PARSED".to_string(),
                     message, attributes,
+                    smart_tags: vec![], // <--- EKLENDİ (FIX 1)
                 }
             } else {
-                // JSON ama obje değil
                 self.create_raw_record(cleaned_line, container_name, stream_type)
             }
         } else {
-             // 3. Fallback - Raw Text: En son çare, düz metin olarak işle
+            // 3. Raw Text Fallback
             self.create_raw_record(cleaned_line, container_name, stream_type)
         };
 
-        // --- KRİTİK: AKILLI TEMİZLİK VE ZENGİNLEŞTİRME (The Brain Çağrısı) ---
-        // Bu satır sayesinde CDR recursive JSON'ları ve Postgres hataları düzelir.
+        // THE BRAIN: Logu temizle ve etiketle
         record.sanitize_and_enrich();
-        // ---------------------------------------------------------------------
 
         record
     }
@@ -112,11 +111,11 @@ impl DockerIngestor {
             },
             trace_id: None, span_id: None, event: "RAW_LOG_OUTPUT".to_string(),
             message: line, attributes: HashMap::new(),
+            smart_tags: vec![], // <--- EKLENDİ (FIX 2)
         }
     }
 }
 
-// Geri kalan kod (async_trait impl)
 #[async_trait]
 impl LogIngestor for DockerIngestor {
     async fn start(&self) -> Result<()> {

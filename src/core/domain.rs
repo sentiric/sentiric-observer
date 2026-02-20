@@ -3,7 +3,7 @@ use validator::Validate;
 use std::collections::HashMap;
 use serde_json::Value;
 
-// --- SUTS v4.0 ZORUNLU ŞEMA ---
+// --- SUTS v4.0 SOVEREIGN SCHEMA ---
 
 #[derive(Debug, Clone, Serialize, Deserialize, Validate)]
 pub struct LogRecord {
@@ -35,9 +35,12 @@ pub struct LogRecord {
 
     // 6. Attributes (Esnek Alan)
     pub attributes: HashMap<String, Value>,
+
+    // 7. Intelligence Tags (Otomatik Üretilen Etiketler - UI Filtreleme için)
+    #[serde(default, skip_deserializing)]
+    pub smart_tags: Vec<String>,
 }
 
-// Resource Context - Dotted fields support via serde rename
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResourceContext {
     #[serde(rename = "service.name")]
@@ -63,10 +66,9 @@ fn validate_severity(severity: &str) -> Result<(), validator::ValidationError> {
     }
 }
 
-// --- INTELLIGENCE LAYER (YENİ EKLENEN KISIM) ---
+// --- INTELLIGENCE CORE ---
 
 impl LogRecord {
-    /// Sistem içi (Observer'ın kendi logları) için hızlı oluşturucu
     pub fn system_log(level: &str, event: &str, msg: &str) -> Self {
         let mut attrs = HashMap::new();
         attrs.insert("source".to_string(), Value::String("internal".to_string()));
@@ -87,40 +89,26 @@ impl LogRecord {
             event: event.to_string(),
             message: msg.to_string(),
             attributes: attrs,
+            smart_tags: vec!["SYS".to_string()],
         }
     }
 
-    /// Logu temizler, zenginleştirir ve hataları düzeltir.
-    /// Bu fonksiyon "Kirli Veri" ile savaşan ana mekanizmadır.
+    /// Kirli veriyi temizler, zenginleştirir ve etiketler.
     pub fn sanitize_and_enrich(&mut self) {
-        // 1. Recursive JSON Parsing (CDR Service Fix)
-        // Eğer message bir JSON string ise, onu parse et ve attributes'a ekle.
+        // A. Recursive JSON Extraction
         if self.message.trim().starts_with('{') {
-            // Serde_json ile iç içe string'i çözmeye çalış
             if let Ok(parsed) = serde_json::from_str::<HashMap<String, Value>>(&self.message) {
-                // İçerideki alanları ana attributes'a taşı (Flattening)
                 for (k, v) in parsed {
-                    // Message alanını ezmemek için özel kontrol
                     if k == "msg" || k == "message" {
-                        if let Some(s) = v.as_str() {
-                            self.message = s.to_string();
-                        }
-                    } else if k == "level" || k == "severity" {
-                        // Level override yapma, orijinal container logu daha güvenilirdir genelde
-                    } else {
+                        if let Some(s) = v.as_str() { self.message = s.to_string(); }
+                    } else if k != "level" && k != "severity" {
                         self.attributes.insert(k.clone(), v);
                     }
-                }
-                
-                // Event'i güncelle (eğer içeride varsa)
-                if let Some(evt) = self.attributes.get("event_type").and_then(|v| v.as_str()) {
-                    self.event = evt.to_uppercase().replace('.', "_");
                 }
             }
         }
 
-        // 2. Trace ID Promotion
-        // Eğer trace_id yoksa ama attributes içinde call_id varsa, onu trace_id yap.
+        // B. Trace ID Promotion
         if self.trace_id.is_none() {
             let candidates = ["sip.call_id", "call_id", "Call-ID", "callid"];
             for key in candidates {
@@ -133,20 +121,29 @@ impl LogRecord {
             }
         }
 
-        // 3. Heuristic Severity Adjustment (Postgres Noise Reduction)
-        // Postgres checkpoint loglarını ERROR'dan INFO'ya çek.
-        if self.resource.service_name.contains("postgres") && self.severity == "ERROR" {
-            let msg_lower = self.message.to_lowercase();
-            if msg_lower.contains("checkpoint starting") || msg_lower.contains("checkpoint complete") {
-                self.severity = "INFO".to_string();
+        // C. Heuristic Noise Reduction & Tagging
+        let svc = self.resource.service_name.to_lowercase();
+        let msg_lower = self.message.to_lowercase();
+
+        // Tagging Logic
+        if svc.contains("postgres") || svc.contains("db") || svc.contains("mongo") {
+            self.smart_tags.push("DB".to_string());
+            if msg_lower.contains("checkpoint") {
+                self.severity = "INFO".to_string(); // False Positive Fix
                 self.event = "DB_CHECKPOINT".to_string();
             }
         }
 
-        // 4. Raft/Discovery Noise Reduction
-        // Sürekli tekrar eden checksum loglarını etiketle (UI'da gruplamak için)
-        if self.resource.service_name.contains("discovery") && self.message.contains("verification checksum OK") {
-            self.event = "RAFT_HEALTH_CHECK".to_string();
+        if svc.contains("sbc") || svc.contains("kamailio") || self.attributes.contains_key("sip.method") {
+            self.smart_tags.push("SIP".to_string());
+        }
+
+        if svc.contains("media") || svc.contains("rtp") || self.attributes.contains_key("rtp.payload_type") {
+            self.smart_tags.push("RTP".to_string());
+        }
+
+        if msg_lower.contains("timeout") || msg_lower.contains("refused") || msg_lower.contains("reset") {
+             self.smart_tags.push("NET".to_string());
         }
     }
 }

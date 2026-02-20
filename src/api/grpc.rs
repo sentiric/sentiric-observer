@@ -16,7 +16,6 @@ pub struct GrpcServerState {
     pub tx: mpsc::Sender<LogRecord>,
 }
 
-// KRİTİK DÜZELTME: Bu makro olmadan Rust async traitleri derleyemez.
 #[tonic::async_trait]
 impl ObserverService for GrpcServerState {
     async fn ingest_log(
@@ -30,7 +29,7 @@ impl ObserverService for GrpcServerState {
         attributes.insert("source".to_string(), serde_json::Value::String("grpc".to_string()));
 
         // Gelen veriyi SUTS v4.0 formatına çevir
-        let log = LogRecord {
+        let mut log = LogRecord {
             schema_v: "1.0.0".to_string(),
             ts: chrono::Utc::now().to_rfc3339(),
             severity: if req.level.is_empty() { "INFO".to_string() } else { req.level.to_uppercase() },
@@ -46,7 +45,11 @@ impl ObserverService for GrpcServerState {
             event: "GRPC_LOG_INGESTED".to_string(),
             message: req.message,
             attributes,
+            smart_tags: vec!["GRPC".to_string()], // <--- EKLENDİ (FIX 4)
         };
+
+        // Zeka Katmanını Çalıştır (Temizlik ve Ek Etiketleme)
+        log.sanitize_and_enrich();
 
         // Aggregator kanalına gönder (Hata olursa logla ama client'a success dön)
         if let Err(e) = self.tx.send(log).await {
