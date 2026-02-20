@@ -37,13 +37,22 @@ pub struct LogRecord {
     pub attributes: HashMap<String, Value>,
 }
 
+// ================== KRİTİK DÜZELTME ==================
+// Serde'ye JSON'daki noktalı alan adlarını nasıl Rust struct alanlarına
+// eşleştireceğini bildiren 'rename' direktifleri eklendi.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResourceContext {
+    #[serde(rename = "service.name")]
     pub service_name: String,
+    #[serde(rename = "service.version")]
     pub service_version: String,
+    #[serde(rename = "service.env")]
     pub service_env: String,
+    #[serde(rename = "host.name")]
     pub host_name: Option<String>,
 }
+// =======================================================
+
 
 // --- VALIDATION LOGIC ---
 
