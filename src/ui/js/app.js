@@ -96,7 +96,6 @@ const ui = {
             if (log.attributes['sip.method']) {
                 method = log.attributes['sip.method'];
                 badgeClass = `sip-${method}`;
-                // Call ID'nin son 4 hanesini göster
                 const cid = log.attributes['sip.call_id'] || '';
                 if(cid) details += `<span style="opacity:0.5; font-size:9px; margin-left:5px;">CID:${cid.slice(-4)}</span>`;
             } else if (log.attributes['rtp.payload_type']) {
@@ -106,15 +105,17 @@ const ui = {
             }
         }
 
-        // Event rengi
         const eventColor = log.event.includes('PACKET') ? '#00ffa3' : '#79c0ff';
+        
+        // ================== KRİTİK UI DÜZELTMESİ ==================
+        const serviceName = log.resource ? (log.resource['service.name'] || 'sys') : 'sys';
+        // =========================================================
 
-        // HTML oluştur
         return `<div class="log-row" style="position:absolute; top:${top}px; width:100%;">
             <span class="col-ts">${time}</span>
             <span class="badge ${badgeClass}">${method}</span>
-            <span class="col-svc" title="${log.resource?.service_name}">
-                ${log.resource?.service_name || 'sys'}
+            <span class="col-svc" title="${serviceName}">
+                ${serviceName}
             </span>
             <span class="col-evt" style="color:${eventColor}" title="${log.event}">${log.event}</span>
             <span class="col-msg" title="${this.escapeHtml(log.message)}">
