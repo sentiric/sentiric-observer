@@ -1,4 +1,4 @@
-# 📡 SENTIRIC UNIFIED TELEMETRY STANDARD (SUTS v4.0)
+# 📡 SENTIRIC UNIFIED TELEMETRY STANDARD (SUTS v4.0) - Golden Standard
 
 | Meta Veri | Detay |
 | :--- | :--- |
@@ -6,7 +6,7 @@
 | **Schema Version** | `1.0.0` (Semantic Versioning) |
 | **Compliance** | OpenTelemetry v1.0 Logs Data Model |
 | **Scope** | Rust, Go, Python, Node.js Microservices |
-| **Author** | Sentiric Architecture Team |
+| **Author** | Sentiric Architecture Board |
 
 ---
 
@@ -26,33 +26,31 @@ Tüm servisler aşağıdaki JSON yapısını **GARANTİ ETMEK ZORUNDADIR**:
 ```json
 {
   // --- 1. GOVERNANCE (YÖNETİŞİM) ---
-  "schema_v": "1.0.0",                   // (Zorunlu) Şema Versiyonu
+  "schema_v": "1.0.0",                    // (Zorunlu) Şema Versiyonu
+  "ts": "2026-02-19T14:30:00.123Z",       // (Zorunlu) ISO 8601 UTC Time
+  "severity": "INFO",                     // (Zorunlu) DEBUG, INFO, WARN, ERROR, FATAL
+  "tenant_id": "sentiric_demo",           // (Opsiyonel) Multi-tenancy için
   
-  // --- 2. METADATA (ZAMAN VE SEVİYE) ---
-  "ts": "2026-02-19T14:30:00.123Z",      // (Zorunlu) ISO 8601 UTC Time
-  "severity": "INFO",                    // (Zorunlu) DEBUG, INFO, WARN, ERROR, FATAL
-  "tenant_id": "default",                // (Opsiyonel) Multi-tenancy için
-  
-  // --- 3. RESOURCE (KİMLİK) ---
+  // --- 2. RESOURCE (KİMLİK) ---
   "resource": {
-    "service.name": "sbc-core",          // (Zorunlu) Servis adı (kebab-case)
-    "service.version": "1.2.4",          // (Zorunlu) SemVer
-    "service.env": "production",         // (Zorunlu) dev, staging, prod
-    "host.name": "edge-eu-01",           // (Otomatik) Pod veya Hostname
-    "host.ip": "10.0.0.5"                // (Otomatik)
+    "service.name": "sbc-service",        // (Zorunlu) Servis adı (kebab-case)
+    "service.version": "1.4.0",           // (Zorunlu) SemVer
+    "service.env": "production",          // (Zorunlu) dev, staging, prod
+    "host.name": "gcp-iowa-gw-01",        // (Otomatik) Pod veya Hostname
+    "host.ip": "10.0.0.5"                 // (Otomatik)
   },
 
-  // --- 4. TRACING (BAĞLAM - Distributed Tracing) ---
-  "trace_id": "c74a9b8f5e3...",          // (Zorunlu) W3C Trace ID (128-bit hex)
-  "span_id": "b12...",                   // (Opsiyonel) İşlem parçacığı ID'si
+  // --- 3. TRACING (BAĞLAM - Distributed Tracing) ---
+  "trace_id": "0ac76572b31e0daa",         // (Zorunlu) W3C Trace ID (128-bit hex)
+  "span_id": null,                        // (Opsiyonel) İşlem parçacığı ID'si
   
-  // --- 5. PAYLOAD (OLAY) ---
-  "event": "SIP_DIALOG_START",           // (Zorunlu) Enum (Büyük harf, snake_case)
-  "message": "Inbound call initiated",   // (Zorunlu) İnsan okunabilir mesaj
+  // --- 4. PAYLOAD (OLAY) ---
+  "event": "SIP_DIALOG_START",            // (Zorunlu) Enum (Büyük harf, snake_case)
+  "message": "Inbound call initiated",    // (Zorunlu) İnsan okunabilir mesaj
   
-  // --- 6. ATTRIBUTES (DETAYLAR - Flattened Key-Value) ---
+  // --- 5. ATTRIBUTES (DETAYLAR - Key-Value) ---
   "attributes": {
-    "sip.call_id": "ue83-12s@1.2.3.4",
+    "sip.call_id": "0ac76572b31e0daa",
     "sip.method": "INVITE",
     "net.peer.ip": "192.168.1.50",
     "net.peer.port": 5060,
@@ -64,7 +62,7 @@ Tüm servisler aşağıdaki JSON yapısını **GARANTİ ETMEK ZORUNDADIR**:
 
 ---
 
-## 3. SEVERITY LEVEL TANIMLARI
+## 3. ALAN TANIMLARI VE KURALLARI (FIELD DEFINITIONS & RULES)
 
 | Seviye | Tanım | Örnek |
 | :--- | :--- | :--- |
@@ -73,6 +71,21 @@ Tüm servisler aşağıdaki JSON yapısını **GARANTİ ETMEK ZORUNDADIR**:
 | **WARN** | İş akışını bozmayan ama dikkat gerektiren durumlar. | `API_DEPRECATED_USE`, `RETRY_ATTEMPT` |
 | **ERROR** | İş akışını bozan hatalar. Operasyon başarısız. | `DB_CONNECTION_FAILED`, `SIP_TIMEOUT` |
 | **FATAL** | Servisin çökmesine neden olan kritik hatalar. | `PANIC`, `OUT_OF_MEMORY` |
+
+
+*   `schema_v`: Değişmez. `"1.0.0"`.
+*   `ts`: **Zorunlu.** ISO 8601 UTC formatında zaman damgası.
+*   `severity`: **Zorunlu.** `DEBUG`, `INFO`, `WARN`, `ERROR`, `FATAL`.
+*   `tenant_id`: **Kural:** Platformun V1'i için `"sentiric_demo"` olarak sabitlenmiştir. Gelecekte dinamik hale gelecektir.
+*   `resource."service.name"`: **Kural:** `docker-compose.yml` içinde tanımlanan kısa, mantıksal servis adı (örn: `sbc-service`, `proxy-service`).
+*   `resource."service.version"`: **Kural:** `Cargo.toml` veya `package.json`'dan alınan SemVer versiyon numarası.
+*   `resource."service.env"`: **Kural:** `ENV` çevre değişkeninden alınır (`production`, `staging`, `development`).
+*   `resource."host.name"`: **Kural:** Servisin üzerinde çalıştığı ana makinenin (node) hostname'i. `NODE_HOSTNAME` çevre değişkeninden enjekte edilir.
+*   `trace_id`: **Kural (ANAYASAL):** Bir çağrının başından sonuna kadar tüm loglarda aynı olan korelasyon kimliği. **Telekom servisleri için bu alan `sip.call_id` değeri ile doldurulmalıdır.** Observer, bu alanı gruplama için kullanır.
+*   `span_id`: **Kural:** Bir `trace_id` içindeki tekil ve ölçülebilir bir işlemi temsil eder (örn: bir TTS sentezi, bir DB sorgusu). **Platform V1 için bu alanın doldurulması ertelenmiştir ve `null` olması beklenmektedir.**
+*   `event`: **Zorunlu.** Olayı anlatan, `UPPER_SNAKE_CASE` formatında, makine tarafından okunabilir bir kimlik (örn: `SDP_REWRITE_SUCCESS`).
+*   `message`: **Zorunlu.** Olayı özetleyen, insan tarafından okunabilir bir metin.
+*   `attributes`: Olayla ilgili tüm ek yapısal verilerin (IP, port, süre vb.) bulunduğu key-value nesnesi.
 
 ---
 
