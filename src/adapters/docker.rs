@@ -13,7 +13,7 @@ use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 use tracing::{error, info, warn};
 
-// Büyük/küçük harf duyarsız, birden çok anahtar deneyen, daha sağlam bir fonksiyon.
+// Bu fonksiyon değişmeden kalıyor.
 fn extract_call_id_from_json(map: &serde_json::Map<String, Value>) -> Option<&str> {
     const CALL_ID_KEYS: [&str; 4] = ["call_id", "callid", "sip.call_id", "CallID"];
     for key in CALL_ID_KEYS {
@@ -41,21 +41,25 @@ impl DockerIngestor {
         Ok(Self { docker, tx, node_name, monitored_containers: Arc::new(Mutex::new(HashMap::new())) })
     }
 
+    // ================== MİMARİ DÜZELTME ==================
     fn process_line(&self, line: String, container_name: &str, stream_type: &str) -> LogRecord {
         let cleaned_line = parser::clean_ansi(&line);
 
+        // 1. SUTS Fast-Path: Gelen log zaten standart formatta mı?
         if let Ok(mut record) = serde_json::from_str::<LogRecord>(&cleaned_line) {
+            // Observer, host.name alanını doldurarak zenginleştirme yapar.
             if record.resource.host_name.is_none() {
                 record.resource.host_name = Some(self.node_name.clone());
             }
-            return record;
+            return record; // Logu yeniden işlemeden, olduğu gibi döndür.
         }
         
+        // 2. Fallback - Generic JSON: Eğer SUTS değilse, genel bir JSON olabilir mi?
         if let Ok(json_val) = serde_json::from_str::<Value>(&cleaned_line) {
             if let Some(map) = json_val.as_object() {
                 let message = map.get("message").and_then(Value::as_str).unwrap_or(&cleaned_line).to_string();
-                let severity = map.get("level").and_then(Value::as_str).unwrap_or("INFO").to_uppercase();
-                let ts = map.get("timestamp").and_then(Value::as_str).unwrap_or("").to_string();
+                let severity = map.get("level").or_else(|| map.get("severity")).and_then(Value::as_str).unwrap_or("INFO").to_uppercase();
+                let ts = map.get("ts").or_else(|| map.get("timestamp")).and_then(Value::as_str).unwrap_or("").to_string();
                 
                 let mut attributes = HashMap::new();
                 if let Some(cid) = extract_call_id_from_json(map) {
@@ -65,19 +69,20 @@ impl DockerIngestor {
                 }
 
                 return LogRecord {
-                    schema_v: "1.0.0".to_string(),
+                    schema_v: "1.0.0".to_string(), // Gelen log SUTS olmadığından, onu SUTS'a dönüştürüyoruz
                     ts: if ts.is_empty() { chrono::Utc::now().to_rfc3339() } else { ts },
                     severity, tenant_id: "default".to_string(),
                     resource: ResourceContext {
                         service_name: container_name.to_string(), service_version: "unknown".to_string(),
                         service_env: "production".to_string(), host_name: Some(self.node_name.clone()),
                     },
-                    trace_id: None, span_id: None, event: "JSON_LOG_PARSED".to_string(),
+                    trace_id: None, span_id: None, event: "JSON_LOG_PARSED".to_string(), // Bu olayın SUTS olmadığını belirt
                     message, attributes,
                 };
             }
         }
 
+        // 3. Fallback - Raw Text: En son çare, düz metin olarak işle
         let severity = if stream_type == "stderr" { "ERROR" } else { "INFO" };
         LogRecord {
             schema_v: "1.0.0".to_string(), ts: chrono::Utc::now().to_rfc3339(),
@@ -86,12 +91,13 @@ impl DockerIngestor {
                 service_name: container_name.to_string(), service_version: "unknown".to_string(),
                 service_env: "production".to_string(), host_name: Some(self.node_name.clone()),
             },
-            trace_id: None, span_id: None, event: "RAW_LOG_OUTPUT".to_string(),
+            trace_id: None, span_id: None, event: "RAW_LOG_OUTPUT".to_string(), // Bu olayın ham metin olduğunu belirt
             message: cleaned_line, attributes: HashMap::new(),
         }
     }
 }
 
+// Geri kalan kod (async_trait impl) aynı kalır.
 #[async_trait]
 impl LogIngestor for DockerIngestor {
     async fn start(&self) -> Result<()> {
