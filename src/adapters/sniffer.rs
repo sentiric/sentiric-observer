@@ -2,10 +2,10 @@ use crate::core::domain::{LogRecord, ResourceContext};
 use crate::ports::LogIngestor;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use pcap::{Capture, Device};
+use pcap::{Capture, Device, Linktype};
 use std::collections::HashMap;
 use tokio::sync::mpsc::Sender;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 use serde_json::Value;
 
 pub struct NetworkSniffer {
@@ -17,7 +17,6 @@ pub struct NetworkSniffer {
 
 impl NetworkSniffer {
     pub fn new(interface: &str, filter: &str, tx: Sender<LogRecord>, node_name: String) -> Self {
-        // BPF Filtresi "any" olamaz.
         let safe_filter = if filter.trim() == "any" || filter.trim().is_empty() {
             "".to_string()
         } else {
@@ -32,32 +31,61 @@ impl NetworkSniffer {
         }
     }
 
-    fn process_packet(&self, packet: pcap::Packet) -> Option<LogRecord> {
-        // Paket uzunluğu kontrolü (Çok küçük paketleri at)
-        if packet.header.len < 12 { return None; }
+    fn parse_headers(packet: &pcap::Packet, link_type: Linktype) -> Option<(Vec<u8>, usize)> {
+        let data = packet.data;
 
-        let payload_offset = 42; // Ethernet(14) + IP(20) + UDP(8) = 42 (Yaklaşık)
-        if (packet.header.len as usize) <= payload_offset { return None; }
+        let offset = match link_type {
+            Linktype::ETHERNET => {
+                if data.len() < 14 { return None; }
+                let ether_type = ((data[12] as u16) << 8) | data[13] as u16;
+                if ether_type == 0x8100 { 18 } else { 14 }
+            },
+            Linktype::LINUX_SLL => 16,
+            Linktype::NULL | Linktype::LOOP => 4,
+            _ => 14,
+        };
+
+        if data.len() <= offset { return None; }
+
+        let ip_header_start = offset;
+        if data.len() <= ip_header_start { return None; }
         
-        // Payload'ı güvenli şekilde al
-        let data = &packet.data[payload_offset..];
+        let version_ihl = data[ip_header_start];
+        let version = version_ihl >> 4;
         
-        // 1. SIP KONTROLÜ (String Detection)
-        // SIP paketleri genelde metin tabanlıdır.
-        if let Ok(data_str) = std::str::from_utf8(data) {
+        if version != 4 { return None; }
+
+        let ihl = version_ihl & 0x0F;
+        let ip_header_len = (ihl as usize) * 4;
+        if ip_header_len < 20 { return None; }
+
+        if data.len() <= ip_header_start + 9 { return None; }
+        let protocol = data[ip_header_start + 9];
+
+        if protocol != 17 { return None; }
+
+        let udp_header_start = ip_header_start + ip_header_len;
+        let udp_header_len = 8;
+        if data.len() < udp_header_start + udp_header_len { return None; }
+
+        let payload_start = udp_header_start + udp_header_len;
+        if data.len() <= payload_start { return None; }
+
+        Some((data[payload_start..].to_vec(), payload_start))
+    }
+
+    fn process_packet(&self, packet: pcap::Packet, link_type: Linktype) -> Option<LogRecord> {
+        let (payload, _header_len) = Self::parse_headers(&packet, link_type)?;
+        
+        if let Ok(data_str) = std::str::from_utf8(&payload) {
             if data_str.contains("SIP/2.0") {
                 return self.create_sip_log(data_str, packet.header.len);
             }
         }
 
-        // 2. RTP KONTROLÜ (Heuristic)
-        // RTP'nin belirgin bir header yapısı vardır.
-        // Byte 0: V=2 (10xxxxxx) -> 0x80 mask
-        if data.len() > 12 && (data[0] & 0xC0) == 0x80 {
-             // Payload Type (Byte 1 & 0x7F) -> PCMU(0), PCMA(8), Dynamic(96-127)
-             let pt = data[1] & 0x7F;
-             // Sadece ses kodeklerine odaklanalım (Gürültüyü azaltmak için)
-             if pt == 0 || pt == 8 || (pt >= 96 && pt <= 127) {
+        if payload.len() > 12 && (payload[0] & 0xC0) == 0x80 {
+             let pt = payload[1] & 0x7F;
+             if pt == 0 || pt == 8 || pt == 18 || (pt >= 96 && pt <= 127) {
                  return self.create_rtp_log(pt, packet.header.len);
              }
         }
@@ -68,8 +96,12 @@ impl NetworkSniffer {
     fn create_sip_log(&self, data: &str, len: u32) -> Option<LogRecord> {
         let method = data.split_whitespace().next().unwrap_or("SIP");
         let call_id = data.lines()
-            .find(|l| l.to_lowercase().starts_with("call-id:"))
-            .map(|l| l.split(':').nth(1).unwrap_or("").trim())
+            .find(|l| l.to_lowercase().starts_with("call-id") || l.to_lowercase().starts_with("i:"))
+            .map(|l| {
+                if let Some(pos) = l.find(':') {
+                    l[pos+1..].trim()
+                } else { "unknown" }
+            })
             .unwrap_or("unknown");
 
         let mut attributes = HashMap::new();
@@ -82,9 +114,6 @@ impl NetworkSniffer {
     }
 
     fn create_rtp_log(&self, pt: u8, len: u32) -> Option<LogRecord> {
-        // RTP trafiği çok yoğun olabilir, bunu sample'lamak gerekebilir.
-        // Şimdilik her paketi logluyoruz ama UI'da görselleştirme için kullanacağız.
-        
         let mut attributes = HashMap::new();
         attributes.insert("net.packet_len".to_string(), Value::from(len));
         attributes.insert("rtp.payload_type".to_string(), Value::from(pt));
@@ -114,7 +143,6 @@ impl NetworkSniffer {
     }
 }
 
-
 #[async_trait]
 impl LogIngestor for NetworkSniffer {
     async fn start(&self) -> Result<()> {
@@ -129,7 +157,6 @@ impl LogIngestor for NetworkSniffer {
             dev.name
         };
 
-        // Capture Ayarları
         let mut cap = Capture::from_device(device_name.as_str())
             .context("Pcap Device Error")?
             .promisc(true)
@@ -138,10 +165,14 @@ impl LogIngestor for NetworkSniffer {
             .open()
             .context("Pcap Open Error (Root gerekli)")?;
 
-        // Filtre Uygulama (Hata verirse logla ama çökme, filtre olmadan devam et)
+        let link_type = cap.get_datalink();
+        // HATA GİDERİLDİ (E0593): Closure artık gerekli argümanı alıyor ve görmezden geliyor.
+        info!("🔗 DataLink Type: {:?} ({})", link_type, link_type.get_name().unwrap_or_else(|_| "?".to_string()));
+
         if !self.filter.is_empty() {
             if let Err(e) = cap.filter(&self.filter, true) {
-                error!("❌ BPF Filter Error ('{}'): {}. Filtre devre dışı bırakıldı, tüm trafik dinleniyor.", self.filter, e);
+                error!("❌ BPF Filter Error ('{}'): {}. Sniffer devre dışı kalıyor.", self.filter, e);
+                return Err(anyhow::anyhow!("BPF Filter Error"));
             } else {
                 info!("✅ BPF Filter Applied: '{}'", self.filter);
             }
@@ -162,7 +193,7 @@ impl LogIngestor for NetworkSniffer {
             loop {
                 match cap.next_packet() {
                     Ok(packet) => {
-                        if let Some(log) = sniffer_logic.process_packet(packet) {
+                        if let Some(log) = sniffer_logic.process_packet(packet, link_type) {
                             match tx_clone.try_send(log) {
                                 Ok(_) => {
                                     if dropped_packets > 0 {
