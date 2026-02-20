@@ -139,6 +139,8 @@ const ui = {
         const svc = log.resource['service.name'] || 'sys';
         const evt = log.event || 'UNKNOWN';
         
+        const host = log.resource['host.name'] || log.resource['net.host.ip'] || 'unknown';
+
         let tagsHtml = '';
         if (log.smart_tags) {
             log.smart_tags.forEach(tag => {
@@ -191,13 +193,20 @@ const ui = {
     },
 
     exportLogs() {
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        const serviceName = state.filters.service || 'all-services';
+        const serverId = state.filteredLogs[0]?.resource?.['host.name'] || 'unknown-host';
+        
+        const fileName = `logs_${serviceName}_${serverId}_${timestamp}.json`;
+
         const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state.filteredLogs, null, 2));
         const node = document.createElement('a');
         node.setAttribute("href", dataStr);
-        node.setAttribute("download", `sentiric_logs_export.json`);
-        document.body.appendChild(node);
-        node.click();
-        node.remove();
+        node.setAttribute("download", fileName);
+        //
+            document.body.appendChild(node);
+            node.click();
+            node.remove();
     },
 
     copyForLLM() {
