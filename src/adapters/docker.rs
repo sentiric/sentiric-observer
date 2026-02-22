@@ -1,3 +1,4 @@
+// sentiric-observer/src/adapters/docker.rs
 use crate::core::domain::{LogRecord, ResourceContext};
 use crate::ports::LogIngestor;
 use crate::utils::parser;
@@ -44,18 +45,15 @@ impl DockerIngestor {
     fn process_line(&self, line: String, container_name: &str, stream_type: &str) -> LogRecord {
         let cleaned_line = parser::clean_ansi(&line);
 
-        // 1. SUTS Fast-Path
         let mut record = if let Ok(mut rec) = serde_json::from_str::<LogRecord>(&cleaned_line) {
             if rec.resource.host_name.is_none() {
                 rec.resource.host_name = Some(self.node_name.clone());
             }
-            // Zeka katmanı için boş başlat, sanitize_and_enrich dolduracak
             if rec.smart_tags.is_empty() {
                  rec.smart_tags = vec![];
             }
             rec
         } else if let Ok(json_val) = serde_json::from_str::<Value>(&cleaned_line) {
-            // 2. Generic JSON Fallback
             if let Some(map) = json_val.as_object() {
                 let message = map.get("message").and_then(Value::as_str).unwrap_or(&cleaned_line).to_string();
                 let severity = map.get("level").or_else(|| map.get("severity")).and_then(Value::as_str).unwrap_or("INFO").to_uppercase();
@@ -84,19 +82,16 @@ impl DockerIngestor {
                     },
                     trace_id: None, span_id: None, event: "JSON_LOG_PARSED".to_string(),
                     message, attributes,
-                    smart_tags: vec![], // <--- EKLENDİ (FIX 1)
+                    smart_tags: vec![],
                 }
             } else {
                 self.create_raw_record(cleaned_line, container_name, stream_type)
             }
         } else {
-            // 3. Raw Text Fallback
             self.create_raw_record(cleaned_line, container_name, stream_type)
         };
 
-        // THE BRAIN: Logu temizle ve etiketle
         record.sanitize_and_enrich();
-
         record
     }
 
@@ -111,7 +106,7 @@ impl DockerIngestor {
             },
             trace_id: None, span_id: None, event: "RAW_LOG_OUTPUT".to_string(),
             message: line, attributes: HashMap::new(),
-            smart_tags: vec![], // <--- EKLENDİ (FIX 2)
+            smart_tags: vec![],
         }
     }
 }
@@ -123,11 +118,7 @@ impl LogIngestor for DockerIngestor {
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(5));
         loop {
             interval.tick().await;
-
-            // [DÜZELTME]: Sadece 'running' değil, 'all' container'ları kontrol et
-            // Bu, restart atan servislerin ilk loglarını kaçırmamızı engeller.
             let options = ListContainersOptions::<String> { all: true, ..Default::default() };
-            
             match self.docker.list_containers(Some(options)).await {
                 Ok(containers) => {
                     let mut monitored = self.monitored_containers.lock().await;
@@ -135,10 +126,7 @@ impl LogIngestor for DockerIngestor {
                         let id = container.id.unwrap_or_default();
                         let name = container.names.as_ref().and_then(|names| names.first())
                             .map(|s| s.trim_start_matches('/').to_string()).unwrap_or_else(|| "unknown".to_string());
-                        
-                        // [DÜZELTME]: 'sentiric-observer' adını içeren tüm varyasyonları atla
                         if name.contains("observer") { continue; }
-
                         if !monitored.contains_key(&id) && !id.is_empty() {
                             info!("✨ Yeni Servis Algılandı: {} ({})", name, &id[..12]);
                             monitored.insert(id.clone(), name.clone());
@@ -146,12 +134,13 @@ impl LogIngestor for DockerIngestor {
                             let node_name_clone = self.node_name.clone(); let monitored_clone = self.monitored_containers.clone();
                             let id_clone = id.clone(); let name_clone = name.clone();
                             tokio::spawn(async move {
-                                // [DÜZELTME]: Logları 'since: 0' ile başından itibaren al
+                                // [DÜZELTME]: 'tail: 0' yerine 'since' kullanarak sadece YENİ logları alıyoruz.
+                                let now_ts = chrono::Utc::now().timestamp();
                                 let options = LogsOptions::<String> { 
                                     follow: true, 
                                     stdout: true, 
                                     stderr: true, 
-                                    since: 0, // Konteynerin tüm geçmişini al
+                                    since: now_ts,
                                     ..Default::default() 
                                 };
                                 let mut stream = docker_clone.logs(&id_clone, Some(options));
