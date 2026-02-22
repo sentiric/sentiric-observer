@@ -14,7 +14,7 @@ use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 use tracing::{error, info, warn};
 
-// Yardımcı fonksiyon
+
 fn extract_call_id_from_json(map: &serde_json::Map<String, Value>) -> Option<&str> {
     const CALL_ID_KEYS: [&str; 4] = ["call_id", "callid", "sip.call_id", "CallID"];
     for key in CALL_ID_KEYS {
@@ -42,6 +42,7 @@ impl DockerIngestor {
         Ok(Self { docker, tx, node_name, monitored_containers: Arc::new(Mutex::new(HashMap::new())) })
     }
 
+    
     fn process_line(&self, line: String, container_name: &str, stream_type: &str) -> LogRecord {
         let cleaned_line = parser::clean_ansi(&line);
 
@@ -111,13 +112,22 @@ impl DockerIngestor {
     }
 }
 
+
 #[async_trait]
 impl LogIngestor for DockerIngestor {
     async fn start(&self) -> Result<()> {
         info!("🐳 Docker Ingestor: Başlatıldı (Node: {})", self.node_name);
+        
+        // [DÜZELTME]: 'last_scan_time' değişkeni eklendi.
+        let mut last_scan_time = chrono::Utc::now().timestamp();
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(5));
+
         loop {
             interval.tick().await;
+
+            // [DÜZELTME]: Bir sonraki tarama için zamanı şimdi güncelle.
+            let current_scan_time = chrono::Utc::now().timestamp();
+
             let options = ListContainersOptions::<String> { all: true, ..Default::default() };
             match self.docker.list_containers(Some(options)).await {
                 Ok(containers) => {
@@ -126,21 +136,29 @@ impl LogIngestor for DockerIngestor {
                         let id = container.id.unwrap_or_default();
                         let name = container.names.as_ref().and_then(|names| names.first())
                             .map(|s| s.trim_start_matches('/').to_string()).unwrap_or_else(|| "unknown".to_string());
+                        
                         if name.contains("observer") { continue; }
+                        
                         if !monitored.contains_key(&id) && !id.is_empty() {
                             info!("✨ Yeni Servis Algılandı: {} ({})", name, &id[..12]);
                             monitored.insert(id.clone(), name.clone());
-                            let docker_clone = self.docker.clone(); let tx_clone = self.tx.clone();
-                            let node_name_clone = self.node_name.clone(); let monitored_clone = self.monitored_containers.clone();
-                            let id_clone = id.clone(); let name_clone = name.clone();
+                            
+                            let docker_clone = self.docker.clone(); 
+                            let tx_clone = self.tx.clone();
+                            let node_name_clone = self.node_name.clone(); 
+                            let monitored_clone = self.monitored_containers.clone();
+                            let id_clone = id.clone(); 
+                            let name_clone = name.clone();
+                            
+                            // [DÜZELTME]: `since` olarak `last_scan_time` kullanılıyor.
+                            let since_ts = last_scan_time;
+
                             tokio::spawn(async move {
-                                // [DÜZELTME]: 'tail: 0' yerine 'since' kullanarak sadece YENİ logları alıyoruz.
-                                let now_ts = chrono::Utc::now().timestamp();
                                 let options = LogsOptions::<String> { 
                                     follow: true, 
                                     stdout: true, 
                                     stderr: true, 
-                                    since: now_ts,
+                                    since: since_ts, // Sadece son kontrolden beri olan logları al
                                     ..Default::default() 
                                 };
                                 let mut stream = docker_clone.logs(&id_clone, Some(options));
@@ -171,6 +189,9 @@ impl LogIngestor for DockerIngestor {
                 }
                 Err(e) => { error!("Docker listeleme hatası: {}", e); }
             }
+
+            // [DÜZELTME]: Döngü sonunda tarama zamanını güncelle.
+            last_scan_time = current_scan_time;
         }
     }
 }
