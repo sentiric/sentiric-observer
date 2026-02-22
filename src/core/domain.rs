@@ -1,3 +1,4 @@
+// sentiric-observer/src/core/domain.rs
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 use std::collections::HashMap;
@@ -7,36 +8,35 @@ use serde_json::Value;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Validate)]
 pub struct LogRecord {
-    // 1. Governance
     #[validate(length(min = 1, message = "Schema version required"))]
     #[serde(default = "default_schema")]
     pub schema_v: String,
 
-    // 2. Metadata
-    pub ts: String, // ISO 8601
+    pub ts: String, 
     
     #[validate(custom = "validate_severity")]
-    pub severity: String, // DEBUG, INFO, WARN, ERROR, FATAL
+    pub severity: String,
 
     #[serde(default)]
     pub tenant_id: String,
 
-    // 3. Resource (Kimlik)
     pub resource: ResourceContext,
 
-    // 4. Tracing (Bağlam)
+    #[serde(default)]
     pub trace_id: Option<String>,
+    
+    #[serde(default)]
     pub span_id: Option<String>,
 
-    // 5. Payload (Olay)
     #[validate(length(min = 1))]
     pub event: String,
     pub message: String,
 
-    // 6. Attributes (Esnek Alan)
+    // [CRITICAL FIX]: Go servisleri her zaman attributes göndermeyebilir.
+    // Default değeri boş bir HashMap olmalıdır.
+    #[serde(default)]
     pub attributes: HashMap<String, Value>,
 
-    // 7. Intelligence Tags (Otomatik Üretilen Etiketler - UI Filtreleme için)
     #[serde(default, skip_deserializing)]
     pub smart_tags: Vec<String>,
 }
@@ -53,11 +53,7 @@ pub struct ResourceContext {
     pub host_name: Option<String>,
 }
 
-// --- VALIDATION LOGIC ---
-
-fn default_schema() -> String {
-    "1.0.0".to_string()
-}
+fn default_schema() -> String { "1.0.0".to_string() }
 
 fn validate_severity(severity: &str) -> Result<(), validator::ValidationError> {
     match severity {
@@ -65,8 +61,6 @@ fn validate_severity(severity: &str) -> Result<(), validator::ValidationError> {
         _ => Err(validator::ValidationError::new("invalid_severity_level")),
     }
 }
-
-// --- INTELLIGENCE CORE ---
 
 impl LogRecord {
     pub fn system_log(level: &str, event: &str, msg: &str) -> Self {
@@ -93,9 +87,7 @@ impl LogRecord {
         }
     }
 
-    /// Kirli veriyi temizler, zenginleştirir ve etiketler.
     pub fn sanitize_and_enrich(&mut self) {
-        // A. Recursive JSON Extraction
         if self.message.trim().starts_with('{') {
             if let Ok(parsed) = serde_json::from_str::<HashMap<String, Value>>(&self.message) {
                 for (k, v) in parsed {
@@ -108,7 +100,6 @@ impl LogRecord {
             }
         }
 
-        // B. Trace ID Promotion
         if self.trace_id.is_none() {
             let candidates = ["sip.call_id", "call_id", "Call-ID", "callid"];
             for key in candidates {
@@ -121,15 +112,13 @@ impl LogRecord {
             }
         }
 
-        // C. Heuristic Noise Reduction & Tagging
         let svc = self.resource.service_name.to_lowercase();
         let msg_lower = self.message.to_lowercase();
 
-        // Tagging Logic
         if svc.contains("postgres") || svc.contains("db") || svc.contains("mongo") {
             self.smart_tags.push("DB".to_string());
             if msg_lower.contains("checkpoint") {
-                self.severity = "INFO".to_string(); // False Positive Fix
+                self.severity = "INFO".to_string();
                 self.event = "DB_CHECKPOINT".to_string();
             }
         }
