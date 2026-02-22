@@ -1,8 +1,10 @@
 // Artık bu bir ES Module
 export class LogStream {
-    constructor(url, onMessage) {
+    // [DÜZELTME]: onStatusChange callback'i eklendi
+    constructor(url, onMessage, onStatusChange) {
         this.url = url;
         this.onMessage = onMessage;
+        this.onStatusChange = onStatusChange; // Durum değişikliği fonksiyonu
         this.conn = null;
     }
 
@@ -11,12 +13,14 @@ export class LogStream {
         this.conn = new WebSocket(this.url);
 
         this.conn.onopen = () => {
-            document.getElementById('ws-status').className = 'status-indicator online';
+            // [DÜZELTME]: Sadece UI elementini değil, callback'i çağır
+            this.onStatusChange(true);
             console.log("✅ Uplink Secured");
         };
 
         this.conn.onclose = () => {
-            document.getElementById('ws-status').className = 'status-indicator offline';
+            // [DÜZELTME]: Sadece UI elementini değil, callback'i çağır
+            this.onStatusChange(false);
             console.log("❌ Uplink Lost. Retrying...");
             setTimeout(() => this.connect(), 3000);
         };

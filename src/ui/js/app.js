@@ -272,11 +272,14 @@ const stream = new LogStream(CONFIG.WS_URL,
         state.newLogs = true;
         if (state.logs.length > CONFIG.MAX_LOGS) state.logs.shift();
     },
+    // [DÜZELTME]: Yeni onStatusChange callback'i burada kullanılıyor
     (status) => {
         state.isConnected = status;
         const el = document.getElementById('ws-status');
-        el.innerText = status ? "CONNECTED" : "DISCONNECTED";
-        el.style.color = status ? "#2ea043" : "#f85149";
+        if (el) { // Eleman mevcutsa güncelle
+            el.innerText = status ? "CONNECTED" : "DISCONNECTED";
+            el.style.color = status ? "#2ea043" : "#f85149";
+        }
     }
 );
 

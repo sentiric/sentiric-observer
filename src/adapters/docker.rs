@@ -123,7 +123,11 @@ impl LogIngestor for DockerIngestor {
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(5));
         loop {
             interval.tick().await;
+
+            // [DÜZELTME]: Sadece 'running' değil, 'all' container'ları kontrol et
+            // Bu, restart atan servislerin ilk loglarını kaçırmamızı engeller.
             let options = ListContainersOptions::<String> { all: true, ..Default::default() };
+            
             match self.docker.list_containers(Some(options)).await {
                 Ok(containers) => {
                     let mut monitored = self.monitored_containers.lock().await;
@@ -131,7 +135,10 @@ impl LogIngestor for DockerIngestor {
                         let id = container.id.unwrap_or_default();
                         let name = container.names.as_ref().and_then(|names| names.first())
                             .map(|s| s.trim_start_matches('/').to_string()).unwrap_or_else(|| "unknown".to_string());
+                        
+                        // [DÜZELTME]: 'sentiric-observer' adını içeren tüm varyasyonları atla
                         if name.contains("observer") { continue; }
+
                         if !monitored.contains_key(&id) && !id.is_empty() {
                             info!("✨ Yeni Servis Algılandı: {} ({})", name, &id[..12]);
                             monitored.insert(id.clone(), name.clone());
@@ -139,7 +146,14 @@ impl LogIngestor for DockerIngestor {
                             let node_name_clone = self.node_name.clone(); let monitored_clone = self.monitored_containers.clone();
                             let id_clone = id.clone(); let name_clone = name.clone();
                             tokio::spawn(async move {
-                                let options = LogsOptions::<String> { follow: true, stdout: true, stderr: true, tail: "0".into(), ..Default::default() };
+                                // [DÜZELTME]: Logları 'since: 0' ile başından itibaren al
+                                let options = LogsOptions::<String> { 
+                                    follow: true, 
+                                    stdout: true, 
+                                    stderr: true, 
+                                    since: 0, // Konteynerin tüm geçmişini al
+                                    ..Default::default() 
+                                };
                                 let mut stream = docker_clone.logs(&id_clone, Some(options));
                                 let ingestor_logic = DockerIngestor { docker: docker_clone, tx: tx_clone.clone(), node_name: node_name_clone, monitored_containers: monitored_clone.clone() };
                                 while let Some(log_result) = stream.next().await {
