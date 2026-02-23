@@ -3,131 +3,169 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SENTIRIC | PANOPTICON v11.1</title>
+    <title>SENTIRIC | PANOPTICON FORENSIC SUITE</title>
     <link rel="stylesheet" href="/ui/css/theme.css">
     <link rel="stylesheet" href="/ui/css/layout.css">
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div id="app-container">
-        <!-- HEADER -->
+    <div id="app-root">
+        <!-- GLOBAL COMMAND HEADER -->
         <header id="main-header">
             <div class="h-left">
-                <span class="logo">💠</span>
-                <div class="brand-box">
-                    <span class="brand-title">PANOPTICON <small>v11.1</small></span>
-                    <span class="brand-status">PRECISION FORENSIC UNIT</span>
+                <span class="logo-pulse">💠</span>
+                <div class="brand-group">
+                    <h1 class="brand-title">PANOPTICON <span class="v-badge">v11.5</span></h1>
+                    <span class="brand-sub">SOVEREIGN FLIGHT RECORDER</span>
                 </div>
             </div>
+
             <div class="h-center">
                 <div class="tactical-pod">
-                    <span class="pod-label">WIRE INTERCEPTOR</span>
-                    <div class="pod-actions">
-                        <span id="sniffer-status" class="status-led standby">STANDBY</span>
-                        <label class="switch"><input type="checkbox" id="sniffer-toggle"><span class="slider"></span></label>
+                    <div class="pod-info">
+                        <span class="pod-lbl">WIRE INTERCEPTOR</span>
+                        <span id="sniffer-status" class="pod-val standby">STANDBY</span>
                     </div>
+                    <label class="cyber-switch">
+                        <input type="checkbox" id="sniffer-toggle">
+                        <span class="slider"></span>
+                    </label>
                 </div>
-                <div class="v-line"></div>
-                <div id="ws-status" class="pill offline">OFFLINE</div>
+                <div class="v-divider"></div>
+                <div id="ws-status" class="status-pill offline">OFFLINE</div>
             </div>
+
             <div class="h-right">
-                <div class="metrics-suite">
-                    <div class="m-val"><b id="pps-val">0</b><small>PPS</small></div>
-                    <div class="m-val"><b id="total-val">0</b><small>EVENTS</small></div>
+                <div class="metrics-grid">
+                    <div class="metric-box"><b id="pps-val">0</b><small>PPS</small></div>
+                    <div class="metric-box"><b id="buffer-val">0%</b><small>BUF</small></div>
+                    <div class="metric-box"><b id="total-val">0</b><small>EVT</small></div>
                 </div>
             </div>
         </header>
 
-        <!-- TOOLBAR -->
+        <!-- INTELLIGENCE TOOLBAR -->
         <nav id="toolbar">
-            <div class="tool-section search">
+            <div class="search-unit">
                 <span class="icon">🔍</span>
-                <input type="text" id="filter-global" placeholder="Trace ID or Keyword Search...">
+                <input type="text" id="filter-global" placeholder="Global Search (Trace ID, Payload, Event)...">
             </div>
-            <div class="v-line"></div>
-            <button id="btn-toggle-noise" class="t-btn active">🔇 NOISE: HIDDEN</button>
+            <div class="v-divider"></div>
+            <div class="filter-controls">
+                <select id="filter-level" class="t-select">
+                    <option value="ALL">ALL LEVELS</option>
+                    <option value="WARN">WARN+</option>
+                    <option value="ERROR">ERROR ONLY</option>
+                </select>
+                <button id="btn-toggle-noise" class="t-btn active">🔇 NOISE: HIDDEN</button>
+            </div>
             <div class="spacer"></div>
-            <div class="action-group">
+            <div class="action-controls">
                 <button id="btn-pause" class="t-btn">PAUSE</button>
                 <button id="btn-clear" class="t-btn danger">WIPE</button>
                 <div class="dropdown">
                     <button class="t-btn primary">EXPORT ▾</button>
                     <div class="dropdown-content">
-                        <a href="#" id="btn-export-raw">📄 Raw Forensic JSON</a>
-                        <a href="#" id="btn-export-ai">🤖 AI Diagnostic Report</a>
+                        <a href="#" id="btn-export-raw">📄 RAW JSON (Forensic)</a>
+                        <a href="#" id="btn-export-ai">🤖 AI REPORT (Context)</a>
                     </div>
                 </div>
             </div>
         </nav>
 
-        <!-- WORKSPACE -->
+        <!-- WORKSPACE (TRIPLE PANE) -->
         <div id="workspace">
-            <aside id="trace-explorer">
-                <div class="pane-header">ACTIVE TRACES</div>
-                <div id="trace-list" class="scroller"></div>
-                <div class="pane-footer"><button id="btn-unlock-trace" class="u-btn" style="display:none;">🔓 UNLOCK ALL</button></div>
+            <!-- LEFT: TRACE EXPLORER -->
+            <aside id="trace-locator">
+                <div class="pane-header">
+                    <span>CALL JOURNEYS</span>
+                    <button id="btn-clear-traces" class="icon-btn" title="Clear Traces">🗑</button>
+                </div>
+                <div id="trace-list" class="scroller">
+                    <div class="empty-hint">Awaiting signaling data...</div>
+                </div>
+                <div class="pane-footer">
+                    <button id="btn-unlock-trace" class="u-btn" style="display:none;">🔓 UNLOCK STREAM</button>
+                </div>
             </aside>
 
+            <!-- CENTER: EVENT MATRIX -->
             <main id="matrix-pane">
                 <div class="matrix-head">
-                    <div>TIMESTAMP</div><div>LVL</div><div>SERVICE</div><div>EVENT</div><div>WIRE DATA SUMMARY</div>
+                    <div class="c-time">TIMESTAMP</div>
+                    <div class="c-lvl">LVL</div>
+                    <div class="c-svc">SERVICE</div>
+                    <div class="c-evt">EVENT TYPE</div>
+                    <div class="c-msg">DATA PAYLOAD / SUMMARY</div>
                 </div>
                 <div id="matrix-scroller" class="scroller">
                     <div id="matrix-content"></div>
                 </div>
             </main>
 
+            <!-- RIGHT: FORENSIC INSPECTOR -->
             <aside id="inspector">
                 <div class="pane-header tabbed">
                     <div class="tabs">
-                        <button class="tab-btn active" data-tab="view-details">PACKET</button>
+                        <button class="tab-btn active" data-tab="view-details">PACKET INFO</button>
                         <button class="tab-btn" data-tab="view-timeline">TIMELINE</button>
                     </div>
-                    <button id="btn-close-insp" class="close-x">✕</button>
+                    <button id="btn-close-insp" class="icon-btn">✕</button>
                 </div>
 
-                <div id="view-details" class="view-pane active scroller">
-                    <div id="insp-placeholder" class="empty-msg">Select an entry.</div>
+                <!-- VIEW 1: DETAILS -->
+                <div id="view-details" class="insp-view active scroller">
+                    <div id="insp-placeholder" class="empty-hint">Select a log entry to analyze.</div>
+                    
                     <div id="insp-content" style="display:none;">
-                        <div class="info-card">
-                            <div class="i-row"><span>TIME:</span><b id="det-ts"></b></div>
-                            <div class="i-row"><span>TRACE:</span><b id="det-trace" class="accent"></b></div>
+                        <!-- Quick Meta -->
+                        <div class="data-card meta">
+                            <div class="m-row"><span class="k">TIME:</span> <span class="v" id="det-ts"></span></div>
+                            <div class="m-row"><span class="k">NODE:</span> <span class="v" id="det-node"></span></div>
+                            <div class="m-row"><span class="k">TRACE:</span> <span class="v" id="det-trace" class="trace-link"></span></div>
                         </div>
 
-                        <!-- [FIX]: rtp-diag bloğu -->
-                        <div id="rtp-diag" class="info-card rtp" style="display:none;">
-                            <div class="label">RTP FLOW ANALYSIS</div>
+                        <!-- RTP ANALYZER -->
+                        <div id="rtp-diag" class="data-card rtp" style="display:none;">
+                            <div class="card-label">RTP FLOW DIAGNOSTICS</div>
                             <div class="rtp-stats">
-                                <div><small>SEQ</small><b id="rtp-seq">-</b></div>
-                                <div><small>PT</small><b id="rtp-pt">-</b></div>
-                                <div><small>SIZE</small><b id="rtp-len">-</b></div>
+                                <div class="rs-item"><small>SEQ</small><b id="rtp-seq">--</b></div>
+                                <div class="rs-item"><small>PT</small><b id="rtp-pt">--</b></div>
+                                <div class="rs-item"><small>SIZE</small><b id="rtp-len">--</b></div>
                             </div>
+                            <!-- Jitter Bar -->
+                            <div class="jitter-track"><div id="jitter-bar"></div></div>
                         </div>
 
-                        <!-- [FIX]: raw-card bloğu -->
-                        <div id="raw-card" class="info-card" style="display:none;">
-                            <div class="label" style="color:var(--info)">RAW WIRE PAYLOAD</div>
-                            <pre id="raw-viewer"></pre>
+                        <!-- RAW WIRE PAYLOAD -->
+                        <div id="raw-card" class="data-card raw" style="display:none;">
+                            <div class="card-label highlight">RAW WIRE PAYLOAD</div>
+                            <pre id="raw-viewer" class="code-view raw"></pre>
                         </div>
 
-                        <div class="info-card">
-                            <div class="label">ATTRIBUTES</div>
-                            <pre id="json-viewer"></pre>
+                        <!-- ATTRIBUTES -->
+                        <div class="data-card">
+                            <div class="card-label">JSON ATTRIBUTES</div>
+                            <pre id="json-viewer" class="code-view"></pre>
                         </div>
                     </div>
                 </div>
 
-                <div id="view-timeline" class="view-pane scroller">
-                    <div id="timeline-flow" class="timeline-body"></div>
+                <!-- VIEW 2: TIMELINE -->
+                <div id="view-timeline" class="insp-view scroller">
+                    <div id="timeline-flow" class="timeline-body">
+                        <!-- JS ile doldurulacak -->
+                    </div>
                 </div>
             </aside>
         </div>
-        
+
         <footer id="main-footer">
-            <div>NODE: <span id="node-name">--</span></div>
-            <div>SENTIRIC FLIGHT RECORDER v11.1</div>
+            <div class="f-left">NODE: <span id="node-name" class="accent">--</span></div>
+            <div class="f-right">SENTIRIC OMNISCIENT ENGINE v11.5</div>
         </footer>
     </div>
+
     <script src="/ui/js/config.js"></script>
     <script type="module" src="/ui/js/app.js"></script>
 </body>
