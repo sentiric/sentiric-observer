@@ -1,66 +1,92 @@
-// export anahtar kelimesi eklendi
+// src/ui/js/visualizer.js
+
 export const visualizer = {
-    canvas: null,
-    ctx: null,
-    data: [],
-    maxPoints: 100,
-
+    scopeCanvas: null,
+    scopeCtx: null,
+    audioCanvas: null,
+    audioCtx: null,
+    data: new Array(100).fill(0),
+    audioActive: false,
+    
     init() {
-        this.canvas = document.getElementById('pulse-chart');
-        if (!this.canvas) return; // Canvas yoksa hata verme, çık
-
-        this.ctx = this.canvas.getContext('2d');
-        this.data = new Array(this.maxPoints).fill(0);
-        this.animate();
-        console.log("📊 Visualizer Module Initialized");
+        this.scopeCanvas = document.getElementById('scope-chart');
+        this.audioCanvas = document.getElementById('audio-viz');
+        
+        if (this.scopeCanvas) {
+            this.scopeCtx = this.scopeCanvas.getContext('2d');
+            this.resize();
+            this.animateScope();
+        }
+        if (this.audioCanvas) {
+            this.audioCtx = this.audioCanvas.getContext('2d');
+        }
     },
-
+    
+    resize() {
+        if(!this.scopeCanvas) return;
+        this.scopeCanvas.width = this.scopeCanvas.offsetWidth;
+        this.scopeCanvas.height = this.scopeCanvas.offsetHeight;
+    },
+    
     pushData(val) {
         this.data.push(val);
-        if (this.data.length > this.maxPoints) this.data.shift();
+        this.data.shift();
     },
 
-    animate() {
-        if (!this.canvas || !this.ctx) return;
+    startAudioViz() {
+        this.audioActive = true;
+        this.animateAudio();
+    },
 
-        this.canvas.width = this.canvas.offsetWidth;
-        this.canvas.height = this.canvas.offsetHeight;
-        const w = this.canvas.width;
-        const h = this.canvas.height;
-        const ctx = this.ctx;
+    stopAudioViz() {
+        this.audioActive = false;
+    },
 
+    animateScope() {
+        const ctx = this.scopeCtx;
+        const w = this.scopeCanvas.width;
+        const h = this.scopeCanvas.height;
+        
         ctx.clearRect(0, 0, w, h);
-
-        // Grid
-        ctx.strokeStyle = '#30363d';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(0, h/2); ctx.lineTo(w, h/2);
-        ctx.stroke();
-
-        // Line
-        ctx.strokeStyle = '#2ea043';
+        ctx.strokeStyle = '#00ff9d';
         ctx.lineWidth = 2;
-        ctx.beginPath();
-
-        const maxVal = Math.max(10, Math.max(...this.data) * 1.2);
-        const step = w / (this.maxPoints - 1);
-
-        this.data.forEach((val, i) => {
-            const x = i * step;
-            const y = h - ((val / maxVal) * h);
-            if (i === 0) ctx.moveTo(x, y);
-            else ctx.lineTo(x, y);
-        });
+        ctx.shadowBlur = 8;
+        ctx.shadowColor = '#00ff9d';
         
+        ctx.beginPath();
+        const step = w / (this.data.length - 1);
+        const max = Math.max(20, ...this.data);
+        
+        this.data.forEach((val, i) => {
+            const y = h - ((val / max) * h * 0.7) - (h * 0.15);
+            if (i === 0) ctx.moveTo(0, y);
+            else ctx.lineTo(i * step, y);
+        });
         ctx.stroke();
         
-        // Fill
-        ctx.lineTo(w, h);
-        ctx.lineTo(0, h);
-        ctx.fillStyle = 'rgba(46, 160, 67, 0.1)';
-        ctx.fill();
+        requestAnimationFrame(() => this.animateScope());
+    },
 
-        requestAnimationFrame(this.animate.bind(this));
+    animateAudio() {
+        if (!this.audioActive || !this.audioCtx) return;
+        
+        const ctx = this.audioCtx;
+        const w = this.audioCanvas.width = this.audioCanvas.offsetWidth;
+        const h = this.audioCanvas.height = this.audioCanvas.offsetHeight;
+        
+        ctx.clearRect(0, 0, w, h);
+        ctx.fillStyle = '#a855f7';
+        
+        const barCount = 40;
+        const gap = 2;
+        const barWidth = (w / barCount) - gap;
+        
+        for (let i = 0; i < barCount; i++) {
+            // Gerçekçi jitter/ses dalgası simülasyonu
+            const barHeight = Math.random() * h * 0.8;
+            ctx.fillRect(i * (barWidth + gap), (h - barHeight) / 2, barWidth, barHeight);
+        }
+        
+        requestAnimationFrame(() => this.animateAudio());
     }
 };
