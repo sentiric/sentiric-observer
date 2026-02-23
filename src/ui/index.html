@@ -1,13 +1,17 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SENTIRIC | PANOPTICON BLACK BOX v12.0</title>
     <link rel="stylesheet" href="/ui/css/theme.css">
     <link rel="stylesheet" href="/ui/css/layout.css">
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Inter:wght@400;600;700;900&display=swap" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Inter:wght@400;600;700;900&display=swap"
+        rel="stylesheet">
 </head>
+
 <body>
     <div id="app-root">
         <!-- GLOBAL COMMAND HEADER -->
@@ -44,20 +48,20 @@
             </div>
         </header>
 
-        <!-- INTELLIGENCE TOOLBAR -->
+<!-- INTELLIGENCE TOOLBAR -->
         <nav id="toolbar">
             <div class="search-unit">
                 <span class="icon">🔍</span>
-                <input type="text" id="filter-global" placeholder="Trace ID or Keyword Search...">
+                <input type="text" id="filter-global" placeholder="Search Trace ID, Phone, Error...">
             </div>
             <div class="v-divider"></div>
             <div class="filter-controls">
                 <select id="filter-level" class="t-select">
                     <option value="ALL">ALL LEVELS</option>
-                    <option value="WARN">WARN+</option>
+                    <option value="WARN">WARN & ERROR</option>
                     <option value="ERROR">ERROR ONLY</option>
                 </select>
-                <button id="btn-toggle-noise" class="t-btn active">🔇 HIDE NOISE</button>
+                <button id="btn-toggle-noise" class="t-btn active">🔇 NOISE: HIDDEN</button>
             </div>
             <div class="spacer"></div>
             <div class="action-controls">
@@ -116,13 +120,14 @@
                 <!-- VIEW 1: DETAILS -->
                 <div id="view-details" class="insp-view active scroller">
                     <div id="insp-placeholder" class="empty-hint">Select a log entry to analyze.</div>
-                    
+
                     <div id="insp-content" style="display:none;">
                         <!-- Quick Meta -->
                         <div class="data-card meta">
                             <div class="m-row"><span class="k">TIME:</span> <span class="v" id="det-ts"></span></div>
                             <div class="m-row"><span class="k">NODE:</span> <span class="v" id="det-node"></span></div>
-                            <div class="m-row"><span class="k">TRACE:</span> <span class="v" id="det-trace" class="trace-link"></span></div>
+                            <div class="m-row"><span class="k">TRACE:</span> <span class="v" id="det-trace"
+                                    class="trace-link"></span></div>
                         </div>
 
                         <!-- RTP ANALYZER -->
@@ -134,7 +139,9 @@
                                 <div class="rs-item"><small>SIZE</small><b id="rtp-len">--</b></div>
                             </div>
                             <!-- Jitter Bar -->
-                            <div class="jitter-track"><div id="jitter-bar"></div></div>
+                            <div class="jitter-track">
+                                <div id="jitter-bar"></div>
+                            </div>
                         </div>
 
                         <!-- RAW WIRE PAYLOAD -->
@@ -166,7 +173,7 @@
         </footer>
     </div>
 
-    <script src="/ui/js/config.js"></script>
     <script type="module" src="/ui/js/app.js"></script>
 </body>
+
 </html>

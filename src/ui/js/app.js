@@ -1,374 +1,440 @@
 // src/ui/js/app.js
+import { Store } from './store.js';
 import { LogStream } from './websocket.js';
+import { CONFIG } from './config.js';
 
-const state = {
-    logs: [],
-    filtered: [],
-    traces: new Map(),
-    pps: 0,
-    paused: false,
-    hideNoise: true,
-    lockedTrace: null,
-    selectedIdx: null,
-    filters: { global: '', level: 'ALL' }
-};
-
-const ui = {
+const UI = {
     el: {},
+    renderPending: false,
+    isLeftMenuOpen: true, // Sol menü başlangıç durumu
 
     init() {
+        console.log("💠 Sovereign UI Engine Booting...");
         const get = id => document.getElementById(id);
         const getAll = cl => document.querySelectorAll(cl);
-
-        // [SAFE BINDING]: JS çökmesini engelleyen seçici
+        
         this.el = {
-            // Panels
-            workspace: get('workspace'),
             matrix: get('matrix-content'),
             scroller: get('matrix-scroller'),
             traceList: get('trace-list'),
-            inspector: get('inspector'),
+            workspace: get('workspace'),
+            traceLocator: get('trace-locator'), // YENİ
             
-            // Views
-            viewDetails: get('view-details'),
-            viewTimeline: get('view-timeline'),
-            inspPlaceholder: get('insp-placeholder'),
-            inspContent: get('insp-content'),
-            timelineFlow: get('timeline-flow'),
-            
-            // Metrics
+            // Metrikler
             pps: get('pps-val'),
             buffer: get('buffer-val'),
             total: get('total-val'),
             status: get('ws-status'),
-            nodeName: get('node-name'),
-            
-            // Controls
-            inpGlobal: get('filter-global'),
-            btnNoise: get('btn-toggle-noise'),
-            btnPause: get('btn-pause'),
-            btnExport: get('btn-export'),
-            btnExpRaw: get('btn-export-raw'),
-            btnExpAi: get('btn-export-ai'),
-            btnUnlock: get('btn-unlock-trace'),
-            btnClear: get('btn-clear'),
-            btnClearTraces: get('btn-clear-traces'),
-            btnCloseInsp: get('btn-close-insp'),
             snifferToggle: get('sniffer-toggle'),
             snifferStatus: get('sniffer-status'),
-            selLvl: get('filter-level'),
             
-            // Details
+            // Kontroller
+            inpSearch: get('filter-global'),
+            selLevel: get('filter-level'), // YENİ
+            btnNoise: get('btn-toggle-noise'),
+            btnPause: get('btn-pause'),
+            btnClear: get('btn-clear'),
+            btnUnlock: get('btn-unlock-trace'),
+            btnCloseInsp: get('btn-close-insp'),
+            
+            // Export (Düzeltildi)
+            btnExportMain: document.querySelector('.dropdown > .t-btn.primary'),
+            dropdownContent: document.querySelector('.dropdown-content'),
+            btnExpRaw: get('btn-export-raw'),
+            btnExpAi: get('btn-export-ai'),
+            
+            // Sağ Panel (Inspector)
+            tabBtns: getAll('.tab-btn'),
+            tabViews: getAll('.insp-view'),
+            inspPlaceholder: get('insp-placeholder'),
+            inspContent: get('insp-content'),
+            
             detTs: get('det-ts'),
-            detTrace: get('det-trace'),
             detNode: get('det-node'),
+            detTrace: get('det-trace'),
             detJson: get('json-viewer'),
-            detRaw: get('raw-viewer'),
-            rawCard: get('raw-card'),
             
-            // RTP
             rtpCard: get('rtp-diag'),
             rtpPt: get('rtp-pt'),
             rtpSeq: get('rtp-seq'),
             rtpLen: get('rtp-len'),
-            rtpFlow: get('jitter-bar'),
             
-            // Tabs
-            tabBtns: getAll('.tab-btn'),
-            tabViews: getAll('.view-pane')
+            timelineFlow: get('timeline-flow')
         };
 
-        this.bindEvents();
-        this.checkSniffer();
-        this.mainLoop();
+        // Sol Menü Katlama Butonunu Enjekte Et (HTML'e dokunmadan Component mantığı)
+        this.injectLeftMenuToggle();
 
-        // 1s Ticker
-        setInterval(() => {
-            if(this.el.pps) this.el.pps.innerText = state.pps;
-            if(this.el.total) this.el.total.innerText = state.logs.length;
-            if(this.el.buffer) this.el.buffer.innerText = Math.round(state.logs.length / 10000) + "%";
-            this.renderTraces();
-            state.pps = 0;
-        }, 1000);
+        this.bindEvents();
+        this.checkSnifferState();
+        
+        Store.subscribe((state) => {
+            if (!this.renderPending) {
+                this.renderPending = true;
+                requestAnimationFrame(() => {
+                    this.render(state);
+                    this.renderPending = false;
+                });
+            }
+        });
+
+        setInterval(() => Store.dispatch('TICK_1S'), 1000);
+        this.startNetwork();
+    },
+
+    injectLeftMenuToggle() {
+        if (!this.el.traceLocator) return;
+        const header = this.el.traceLocator.querySelector('.pane-header');
+        if (header) {
+            const toggleBtn = document.createElement('button');
+            toggleBtn.innerHTML = '◀';
+            toggleBtn.className = 'icon-btn';
+            toggleBtn.style.position = 'absolute';
+            toggleBtn.style.right = '10px';
+            toggleBtn.onclick = () => {
+                this.isLeftMenuOpen = !this.isLeftMenuOpen;
+                this.el.workspace.style.gridTemplateColumns = this.isLeftMenuOpen 
+                    ? 'var(--w-left) 1fr var(--w-right)' 
+                    : '40px 1fr var(--w-right)';
+                
+                this.el.traceList.style.display = this.isLeftMenuOpen ? 'block' : 'none';
+                toggleBtn.innerHTML = this.isLeftMenuOpen ? '◀' : '▶';
+            };
+            header.style.position = 'relative';
+            header.appendChild(toggleBtn);
+        }
     },
 
     bindEvents() {
-        const apply = () => { this.filter(); this.render(); };
-
-        // [SAFE ACCESS]: Sadece varsa bağla
-        if(this.el.inpGlobal) this.el.inpGlobal.oninput = (e) => {
-            state.filters.global = e.target.value.toLowerCase();
-            apply();
-        };
-
-        if(this.el.btnNoise) this.el.btnNoise.onclick = (e) => {
-            state.hideNoise = !state.hideNoise;
-            e.target.innerText = state.hideNoise ? "🔇 NOISE: HIDDEN" : "🔊 NOISE: VISIBLE";
-            apply();
-        };
-
-        if(this.el.btnPause) this.el.btnPause.onclick = (e) => {
-            state.paused = !state.paused;
-            e.target.innerText = state.paused ? "▶ RESUME" : "PAUSE";
-        };
-
-        if(this.el.btnClear) this.el.btnClear.onclick = () => {
-            state.logs = []; state.traces.clear(); state.filtered = []; this.render(); this.renderTraces();
-        };
+        // --- Filtreler ---
+        this.el.inpSearch?.addEventListener('input', (e) => Store.dispatch('SET_SEARCH', e.target.value));
         
-        if(this.el.btnClearTraces) this.el.btnClearTraces.onclick = () => {
-            state.traces.clear(); this.renderTraces();
-        };
+        this.el.selLevel?.addEventListener('change', (e) => {
+            Store.dispatch('SET_LEVEL', e.target.value);
+        });
 
-        if(this.el.btnUnlock) this.el.btnUnlock.onclick = () => {
-            state.lockedTrace = null;
+        this.el.btnNoise?.addEventListener('click', (e) => {
+            Store.dispatch('TOGGLE_NOISE');
+            e.target.innerText = Store.state.controls.hideRtpNoise ? "🔇 NOISE: HIDDEN" : "🔊 NOISE: VISIBLE";
+            e.target.classList.toggle('active', Store.state.controls.hideRtpNoise);
+        });
+
+        // --- Kontroller ---
+        this.el.btnPause?.addEventListener('click', (e) => {
+            Store.dispatch('TOGGLE_PAUSE');
+            e.target.innerText = Store.state.status.isPaused ? "▶ RESUME" : "PAUSE";
+            e.target.classList.toggle('danger', Store.state.status.isPaused);
+        });
+
+        this.el.btnClear?.addEventListener('click', () => Store.dispatch('WIPE_DATA'));
+        
+        this.el.btnUnlock?.addEventListener('click', () => {
+            Store.dispatch('UNLOCK_TRACE');
             this.el.btnUnlock.style.display = 'none';
-            apply();
-        };
-        
-        if(this.el.btnCloseInsp) this.el.btnCloseInsp.onclick = () => {
-            this.el.inspector.classList.remove('open');
-            this.el.workspace.classList.remove('inspector-open');
-        };
+            this.closeInspector();
+        });
 
-        // EXPORT
-        if(this.el.btnExpRaw) this.el.btnExpRaw.onclick = () => this.exportData('raw');
-        if(this.el.btnExpAi) this.el.btnExpAi.onclick = () => this.exportData('ai');
+        this.el.btnCloseInsp?.addEventListener('click', () => this.closeInspector());
 
-        // MATRIX CLICK
-        if(this.el.matrix) this.el.matrix.onclick = (e) => {
+        // --- Event Delegation (Matris Tıklamaları) ---
+        this.el.matrix?.addEventListener('click', (e) => {
             const row = e.target.closest('.log-row');
-            if(row) this.inspect(parseInt(row.dataset.idx));
-        };
-
-        // TRACE CLICK
-        if(this.el.traceList) this.el.traceList.onclick = (e) => {
-            const item = e.target.closest('.trace-item');
-            if(item) {
-                state.lockedTrace = item.dataset.tid;
-                this.el.btnUnlock.style.display = 'block';
-                apply();
-                this.renderTraces();
+            if (row) {
+                const idx = parseFloat(row.dataset.idx);
+                Store.dispatch('SELECT_LOG', idx);
+                this.openInspector(idx);
             }
-        };
+        });
 
-        // SNIFFER TOGGLE
-        if(this.el.snifferToggle) {
-            this.el.snifferToggle.onchange = (e) => {
-                const act = e.target.checked ? 'enable' : 'disable';
-                fetch(`/api/sniffer/${act}`, {method:'POST'});
-            };
-        }
+        this.el.traceList?.addEventListener('click', (e) => {
+            const item = e.target.closest('.trace-item');
+            if (item) {
+                Store.dispatch('LOCK_TRACE', item.dataset.tid);
+                this.el.btnUnlock.style.display = 'block';
+                this.renderTimeline(); 
+            }
+        });
 
-        // TAB SWITCHING
-        this.el.tabBtns.forEach(btn => {
-            btn.onclick = () => {
+        // --- TABS ---
+        this.el.tabBtns?.forEach(btn => {
+            btn.addEventListener('click', () => {
                 this.el.tabBtns.forEach(b => b.classList.remove('active'));
                 this.el.tabViews.forEach(v => v.classList.remove('active'));
+                
                 btn.classList.add('active');
                 const target = document.getElementById(btn.dataset.tab);
-                if(target) target.classList.add('active');
-                if(btn.dataset.tab === 'view-timeline') this.renderTimeline();
-            };
+                if (target) target.classList.add('active');
+                
+                if (btn.dataset.tab === 'view-timeline') this.renderTimeline();
+            });
         });
-    },
 
-    extractTrace(log) {
-        const tid = log.trace_id || (log.attributes && log.attributes['sip.call_id']);
-        if(!tid || tid === "unknown") return;
-        if(!state.traces.has(tid)) state.traces.set(tid, {start: log.ts, count: 1});
-        else state.traces.get(tid).count++;
-    },
-
-    filter() {
-        const query = state.filters.global;
-        state.filtered = state.logs.filter(l => {
-            const tid = l.trace_id || (l.attributes && l.attributes['sip.call_id']);
-            if(state.lockedTrace) {
-                if(tid !== state.lockedTrace) return false;
-            } else {
-                if(state.hideNoise && l.event === "RTP_PACKET") return false;
-            }
-            if(query) {
-                const msg = (l.message || '').toLowerCase();
-                const evt = (l.event || '').toLowerCase();
-                if(!msg.includes(query) && !evt.includes(query) && !(tid && tid.toLowerCase().includes(query))) return false;
-            }
-            return true;
+        // --- SNIFFER API ---
+        this.el.snifferToggle?.addEventListener('change', (e) => {
+            const isActive = e.target.checked;
+            const action = isActive ? 'enable' : 'disable';
+            
+            fetch(`/api/sniffer/${action}`, { method: 'POST' })
+                .then(r => r.json())
+                .then(res => {
+                    this.el.snifferStatus.innerText = isActive ? "LIVE" : "STANDBY";
+                    this.el.snifferStatus.className = `pod-val ${isActive ? 'recording' : 'standby'}`;
+                }).catch(() => {});
         });
+
+        // --- EXPORT DROPDOWN FIX ---
+        if (this.el.btnExportMain && this.el.dropdownContent) {
+            this.el.btnExportMain.addEventListener('click', (e) => {
+                e.preventDefault();
+                const isBlock = this.el.dropdownContent.style.display === 'block';
+                this.el.dropdownContent.style.display = isBlock ? 'none' : 'block';
+            });
+
+            // Ekranda başka yere tıklayınca kapat
+            document.addEventListener('click', (e) => {
+                if (!e.target.closest('.dropdown')) {
+                    this.el.dropdownContent.style.display = 'none';
+                }
+            });
+        }
+
+        this.el.btnExpRaw?.addEventListener('click', (e) => { e.preventDefault(); this.exportData('raw'); });
+        this.el.btnExpAi?.addEventListener('click', (e) => { e.preventDefault(); this.exportData('ai'); });
     },
 
-    mainLoop() {
-        const run = () => {
-            if(state.hasNew && !state.paused) { this.filter(); this.render(); state.hasNew = false; }
-            if(!state.paused && !state.selectedIdx && this.el.scroller) {
-                this.el.scroller.scrollTop = this.el.scroller.scrollHeight;
+    startNetwork() {
+        new LogStream(CONFIG.WS_URL, 
+            (log) => Store.dispatch('INGEST_LOG', log),
+            (isOnline) => {
+                if(this.el.status) {
+                    this.el.status.innerText = isOnline ? "ONLINE" : "OFFLINE";
+                    this.el.status.className = `status-pill ${isOnline ? 'online' : 'offline'}`;
+                }
             }
-            requestAnimationFrame(run);
-        };
-        run();
+        ).connect();
     },
 
-    render() {
-        if (!this.el.content) return;
-        const data = state.filtered.slice(-300);
-        this.el.content.innerHTML = data.map(l => {
-            const time = l.ts ? l.ts.split('T')[1].slice(0, 12) : '--:--';
-            const sel = state.selectedIdx === l._idx ? 'selected' : '';
-            return `<div class="log-row ${sel}" data-idx="${l._idx}">
-                <span style="color:#555">${time}</span><span class="sev-${l.severity}">${l.severity}</span>
-                <span style="color:var(--purple)">${l.resource ? l.resource['service.name'] : 'sys'}</span>
-                <span style="color:#fff; font-weight:bold">${l.event}</span>
-                <span style="overflow:hidden; text-overflow:ellipsis; color:#888;">${this.esc(l.message)}</span>
-            </div>`;
-        }).join('');
+    checkSnifferState() {
+        fetch('/api/sniffer/status')
+            .then(r => r.json())
+            .then(data => {
+                if (this.el.snifferToggle) this.el.snifferToggle.checked = data.active;
+                if (this.el.snifferStatus) {
+                    this.el.snifferStatus.innerText = data.active ? "LIVE" : "STANDBY";
+                    this.el.snifferStatus.className = `pod-val ${data.active ? 'recording' : 'standby'}`;
+                }
+            }).catch(() => {});
     },
 
-    renderTraces() {
-        if(!this.el.traceList) return;
-        const traces = Array.from(state.traces.entries()).reverse().slice(0, 30);
-        this.el.traceList.innerHTML = traces.map(([tid, d]) => {
-            const active = state.lockedTrace === tid ? 'active' : '';
-            return `<div class="trace-item ${active}" data-tid="${tid}">
-                <div class="tid">${tid.substring(0, 24)}...</div>
-                <div class="t-meta"><span>${d.start.split('T')[1].slice(0,8)}</span><span>${d.count} pkts</span></div>
-            </div>`;
-        }).join('');
+    // ==========================================
+    // RENDER FUNCTIONS
+    // ==========================================
+
+    render(state) {
+        if (this.el.pps) this.el.pps.innerText = state.status.pps;
+        if (this.el.total) this.el.total.innerText = state.rawLogs.length;
+        if (this.el.buffer) {
+            const pct = Math.round((state.rawLogs.length / CONFIG.MAX_LOGS) * 100);
+            this.el.buffer.innerText = `${pct}%`;
+        }
+
+        this.renderMatrix(state);
+        this.renderTraces(state);
     },
 
-    inspect(idx) {
-        const log = state.logs.find(l => l._idx === idx);
-        if(!log) return;
-        state.selectedIdx = idx;
+    renderMatrix(state) {
+        if (!this.el.matrix) return;
+        const visibleLogs = state.filteredLogs.slice(-150);
         
-        if(this.el.inspector) this.el.inspector.classList.add('open');
-        if(this.el.workspace) this.el.workspace.classList.add('inspector-open');
-        if(this.el.inspPlaceholder) this.el.inspPlaceholder.style.display = 'none';
-        if(this.el.inspContent) this.el.inspContent.style.display = 'block';
-        this.render();
-
-        if(this.el.detTs) this.el.detTs.innerText = log.ts;
-        if(this.el.detNode) this.el.detNode.innerText = log.resource['host.name'] || 'N/A';
-        const tid = log.trace_id || (log.attributes && log.attributes['sip.call_id']);
-        if(this.el.detTrace) this.el.detTrace.innerText = tid || 'N/A';
-
-        // Attributes
-        let attrs = log.attributes ? {...log.attributes} : {};
-        if(attrs.payload) {
-            if(this.el.rawCard) this.el.rawCard.style.display = 'block';
-            if(this.el.detRaw) this.el.detRaw.innerText = attrs.payload;
-            delete attrs.payload;
-        } else {
-            if(this.el.rawCard) this.el.rawCard.style.display = 'none';
+        let html = '';
+        for (let i = 0; i < visibleLogs.length; i++) {
+            const l = visibleLogs[i];
+            const time = l.ts ? l.ts.substring(11, 23) : '--:--';
+            const isSelected = state.controls.selectedLogIdx === l._idx ? 'selected' : '';
+            const svcName = l.resource ? l.resource['service.name'] : 'sys';
+            
+            let sevColor = "#ccc";
+            if (l.severity === "ERROR" || l.severity === "FATAL") sevColor = "var(--danger)";
+            else if (l.severity === "WARN") sevColor = "var(--warn)";
+            
+            html += `<div class="log-row ${isSelected}" data-idx="${l._idx}">
+                <span style="color:#666">${time}</span>
+                <span style="color:${sevColor}; font-weight:bold;">${l.severity}</span>
+                <span style="color:var(--purple)">${svcName}</span>
+                <span style="color:#fff; font-weight:800;">${l.event}</span>
+                <span style="overflow:hidden; text-overflow:ellipsis; color:#999;">${this.escapeHtml(l.message)}</span>
+            </div>`;
         }
-        if(this.el.detJson) this.el.detJson.innerText = JSON.stringify(attrs, null, 2);
+        this.el.matrix.innerHTML = html;
 
-        // RTP Card
-        const isRtp = log.event === "RTP_PACKET" || (log.smart_tags && log.smart_tags.includes('RTP'));
-        if(this.el.rtpCard) {
-            this.el.rtpCard.style.display = isRtp ? 'block' : 'none';
-            if(isRtp) {
-                if(this.el.rtpPt) this.el.rtpPt.innerText = attrs['rtp.payload_type'] || '-';
-                if(this.el.rtpSeq) this.el.rtpSeq.innerText = attrs['rtp.sequence'] || '-';
-                if(this.el.rtpLen) this.el.rtpLen.innerText = attrs['net.packet_len'] + 'B';
-            }
+        if (!state.status.isPaused && !state.controls.selectedLogIdx && this.el.scroller) {
+            this.el.scroller.scrollTop = this.el.scroller.scrollHeight;
         }
     },
 
-    // --- TIMELINE ENGINE (FIXED) ---
-    renderTimeline() {
-        // [FIX]: Timeline için ya kilitli trace'i kullan, ya da seçili logun trace'ini bul
-        let targetTrace = state.lockedTrace;
-        if(!targetTrace && state.selectedIdx !== null) {
-            const log = state.logs.find(l => l._idx === state.selectedIdx);
-            if(log) targetTrace = log.trace_id || (log.attributes && log.attributes['sip.call_id']);
+    renderTraces(state) {
+        if (!this.el.traceList) return;
+        const traces = Array.from(state.activeTraces.entries()).reverse().slice(0, 50);
+            
+        let html = '';
+        for (let i = 0; i < traces.length; i++) {
+            const [tid, data] = traces[i];
+            const isActive = state.controls.lockedTraceId === tid ? 'active' : '';
+            const time = data.start ? data.start.substring(11, 19) : '--:--';
+            
+            html += `<div class="trace-item ${isActive}" data-tid="${tid}">
+                <div class="tid">${tid.substring(0, 24)}...</div>
+                <div class="t-meta"><span>${time}</span><span>${data.count} pkts</span></div>
+            </div>`;
+        }
+        if(html === '') html = '<div class="empty-hint">Awaiting signaling data...</div>';
+        this.el.traceList.innerHTML = html;
+    },
+
+    openInspector(idx) {
+        const log = Store.state.rawLogs.find(l => l._idx === idx);
+        if (!log) return;
+
+        this.el.workspace.classList.add('inspector-open');
+        // Sol menü açıksa, sağ panel açıldığında matrisi sıkıştırmamak için grid'i güncelle
+        this.el.workspace.style.gridTemplateColumns = this.isLeftMenuOpen 
+            ? 'var(--w-left) 1fr var(--w-right)' 
+            : '40px 1fr var(--w-right)';
+            
+        this.el.inspPlaceholder.style.display = 'none';
+        this.el.inspContent.style.display = 'block';
+
+        if (this.el.detTs) this.el.detTs.innerText = log.ts || 'N/A';
+        if (this.el.detNode) this.el.detNode.innerText = log.resource ? log.resource['host.name'] : 'N/A';
+        
+        const tid = log.trace_id || (log.attributes && log.attributes['sip.call_id']);
+        if (this.el.detTrace) this.el.detTrace.innerText = tid || 'No Trace ID attached';
+
+        if (this.el.detJson) {
+            this.el.detJson.innerText = JSON.stringify(log.attributes || {}, null, 2);
         }
 
-        if(!targetTrace || !this.el.timelineFlow) {
-            this.el.timelineFlow.innerHTML = '<div class="empty-hint">Lock a trace or select a packet to view timeline.</div>';
+        const isRtp = log.event === "RTP_PACKET" || (log.smart_tags && log.smart_tags.includes('RTP'));
+        if (this.el.rtpCard) {
+            this.el.rtpCard.style.display = isRtp ? 'block' : 'none';
+            if (isRtp && log.attributes) {
+                if (this.el.rtpPt) this.el.rtpPt.innerText = log.attributes['rtp.payload_type'] || '-';
+                if (this.el.rtpSeq) this.el.rtpSeq.innerText = log.attributes['rtp.sequence'] || '-';
+                if (this.el.rtpLen) this.el.rtpLen.innerText = (log.attributes['net.packet_len'] || 0) + 'B';
+            }
+        }
+
+        this.renderTimeline();
+    },
+
+    closeInspector() {
+        Store.dispatch('SELECT_LOG', null);
+        this.el.workspace.classList.remove('inspector-open');
+        this.el.workspace.style.gridTemplateColumns = this.isLeftMenuOpen 
+            ? 'var(--w-left) 1fr 0px' 
+            : '40px 1fr 0px';
+    },
+
+    renderTimeline() {
+        if (!this.el.timelineFlow) return;
+
+        const state = Store.state;
+        let targetTrace = state.controls.lockedTraceId;
+        
+        if (!targetTrace && state.controls.selectedLogIdx !== null) {
+            const log = state.rawLogs.find(l => l._idx === state.controls.selectedLogIdx);
+            if (log) targetTrace = log.trace_id || (log.attributes && log.attributes['sip.call_id']);
+        }
+
+        if (!targetTrace) {
+            this.el.timelineFlow.innerHTML = '<div class="empty-hint">Lock a trace or select a packet to view causality timeline.</div>';
             return;
         }
 
-        const journey = state.logs
+        const journey = state.rawLogs
             .filter(l => (l.trace_id || (l.attributes && l.attributes['sip.call_id'])) === targetTrace)
-            .filter(l => l.event !== "RTP_PACKET") // Timeline'da RTP kirliliği istemiyoruz
-            .sort((a,b) => a.ts.localeCompare(b.ts));
+            .filter(l => l.event !== "RTP_PACKET") 
+            .sort((a, b) => a.ts.localeCompare(b.ts));
 
-        if(!journey.length) { 
+        if (!journey.length) { 
             this.el.timelineFlow.innerHTML = '<div class="empty-hint">No timeline events found.</div>'; 
             return; 
         }
 
-        const start = new Date(journey[0].ts);
-        this.el.timelineFlow.innerHTML = journey.map(l => {
-            const delta = new Date(l.ts) - start;
+        const startTs = new Date(journey[0].ts).getTime();
+        let html = '';
+        
+        journey.forEach(l => {
+            const deltaMs = new Date(l.ts).getTime() - startTs;
             let type = '';
-            if(l.event.includes('SIP')) type = 'sip';
-            else if(l.event.includes('RTP') || l.event.includes('MEDIA')) type = 'rtp';
-            if(l.severity === 'ERROR') type = 'error';
+            if (l.smart_tags?.includes('SIP') || l.event.includes('SIP')) type = 'sip';
+            else if (l.smart_tags?.includes('RTP') || l.event.includes('MEDIA')) type = 'rtp';
+            if (l.severity === 'ERROR' || l.severity === 'FATAL') type = 'error';
 
-            return `<div class="tl-item ${type}">
+            html += `<div class="tl-item ${type}">
                 <div class="tl-mark"></div>
                 <div class="tl-content">
-                    <div class="tl-head"><span class="tl-title">${l.event}</span><span class="tl-time">+${delta}ms</span></div>
+                    <div class="tl-head">
+                        <span class="tl-title">${l.event}</span>
+                        <span class="tl-time">+${deltaMs}ms</span>
+                    </div>
                     <div class="tl-svc">${l.resource['service.name']}</div>
-                    <div class="tl-msg">${this.esc(l.message)}</div>
+                    <div class="tl-msg">${this.escapeHtml(l.message)}</div>
                 </div>
             </div>`;
-        }).join('');
+        });
+
+        this.el.timelineFlow.innerHTML = html;
     },
 
     exportData(type) {
-        const trace = state.lockedTrace;
-        const data = trace ? state.logs.filter(l => (l.trace_id || l.attributes['sip.call_id']) === trace) : state.filtered;
+        const state = Store.state;
+        const trace = state.controls.lockedTraceId;
+        const dataToExport = trace 
+            ? state.rawLogs.filter(l => (l.trace_id || l.attributes?.['sip.call_id']) === trace) 
+            : state.filteredLogs; 
         
-        if(type === 'raw') {
-            const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
-            this.download(blob, `forensic_${trace || 'dump'}.json`);
-        } else {
-            let r = `# SENTIRIC AI FORENSIC REPORT\nTrace: ${trace || 'GLOBAL'}\nGen: ${new Date().toISOString()}\n\n## TIMELINE\n`;
-            if(data.length > 0) {
-                const start = new Date(data[0].ts);
-                data.forEach(l => {
-                    if(l.event === 'RTP_PACKET') return;
-                    r += `[+${new Date(l.ts)-start}ms] ${l.severity} | ${l.resource['service.name']} -> ${l.event}: ${l.message}\n`;
-                    if(l.severity === 'ERROR') r += `   ERR_DETAILS: ${JSON.stringify(l.attributes)}\n`;
-                });
-            }
-            const blob = new Blob([r], {type: 'text/markdown'});
-            this.download(blob, `ai_report_${trace || 'dump'}.md`);
+        if (dataToExport.length === 0) return alert("No data to export!");
+
+        if (type === 'raw') {
+            const blob = new Blob([JSON.stringify(dataToExport, null, 2)], { type: 'application/json' });
+            this.downloadFile(blob, `panopticon_evidence_${trace || 'global'}.json`);
+        } else if (type === 'ai') {
+            let md = `# SENTIRIC SOVEREIGN AI REPORT\nTrace Target: ${trace || 'GLOBAL'}\nGenerated: ${new Date().toISOString()}\n\n## EVENT TIMELINE\n`;
+            const start = new Date(dataToExport[0].ts).getTime();
+            
+            dataToExport.forEach(l => {
+                if (l.event === 'RTP_PACKET') return; 
+                const delta = new Date(l.ts).getTime() - start;
+                md += `[+${delta}ms] ${l.severity} | ${l.resource['service.name']} -> ${l.event}: ${l.message}\n`;
+                if (l.severity === 'ERROR' && l.attributes) {
+                    md += `   > ERROR DETAILS: ${JSON.stringify(l.attributes)}\n`;
+                }
+            });
+            const blob = new Blob([md], { type: 'text/markdown' });
+            this.downloadFile(blob, `ai_context_${trace || 'global'}.md`);
         }
+        
+        // Export menüsünü indirildikten sonra kapat
+        if(this.el.dropdownContent) this.el.dropdownContent.style.display = 'none';
     },
 
-    download(b, n) { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = n; a.click(); },
-
-    checkSniffer() {
-        fetch('/api/sniffer/status').then(r=>r.json()).then(d => {
-            if(this.el.snifferToggle) this.el.snifferToggle.checked = d.active;
-            if(this.el.snifferStatus) {
-                this.el.snifferStatus.innerText = d.active ? "LIVE" : "STANDBY";
-                this.el.snifferStatus.className = `status-led ${d.active ? 'recording' : 'standby'}`;
-            }
-        }).catch(()=>{});
+    downloadFile(blob, filename) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
     },
 
-    esc(s) { return s ? s.toString().replace(/&/g, "&amp;").replace(/</g, "&lt;") : ""; }
+    escapeHtml(unsafe) {
+        if (!unsafe) return "";
+        return unsafe.toString()
+             .replace(/&/g, "&amp;")
+             .replace(/</g, "&lt;")
+             .replace(/>/g, "&gt;");
+    }
 };
 
-let logIdx = 0;
-new LogStream(CONFIG.WS_URL, 
-    (log) => {
-        log._idx = logIdx++;
-        state.logs.push(log); state.pps++; state.hasNew = true;
-        ui.extractTrace(log);
-        if(state.logs.length > 10000) state.logs.shift();
-    },
-    (status) => {
-        const el = document.getElementById('ws-status');
-        if(el) {
-            el.innerText = status ? "ONLINE" : "OFFLINE";
-            el.className = `pill ${status ? 'online' : 'offline'}`;
-        }
-    }
-).connect();
-document.addEventListener('DOMContentLoaded', () => ui.init());
+document.addEventListener('DOMContentLoaded', () => UI.init());

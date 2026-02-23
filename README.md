@@ -162,8 +162,24 @@ observer-service:
 # 1. Projeyi derle
 cargo build --release
 
-# 2. Çalıştır (Log seviyesi: INFO)
-RUST_LOG=info ./target/release/sentiric-observer
+# 2. Çalıştır onerılen 
+./target/release/sentiric-observer
+```
+Yetkilendir
+```bash
+sudo setcap cap_net_admin,cap_net_raw+eip ./target/release/sentiric-observer
+```
+
+Çalıştır.
+
+```bash
+RUST_LOG=info \
+LOG_FORMAT=json \
+SNIFFER_ENABLED=true \
+SNIFFER_INTERFACE=any \
+SNIFFER_FILTER="udp port 13084 or udp portrange 50000-50100" \
+./target/release/sentiric-observer
+
 ```
 
 ---
