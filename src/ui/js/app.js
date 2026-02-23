@@ -1,4 +1,3 @@
-// src/ui/js/app.js
 import { LogStream } from './websocket.js';
 
 const state = {
@@ -6,7 +5,7 @@ const state = {
     filtered: [],
     pps: 0,
     paused: false,
-    selectedIdx: null,
+    selectedLog: null,
     lockedTrace: null,
     filters: { trace: '', svc: '', msg: '', level: 'ALL' }
 };
@@ -15,60 +14,67 @@ const ui = {
     el: {},
 
     init() {
-        // [ZORUNLU]: Tüm elementleri güvenli bir şekilde cache'le
         const get = (id) => document.getElementById(id);
         
+        // SAFE DOM BINDING
         this.el = {
-            content: get('log-content'),
             scroller: get('log-scroller'),
-            inspector: get('inspector'),
-            inspBody: get('insp-body'),
+            content: get('log-content'),
+            detailPane: get('detail-pane'),
+            
+            // Stats
             pps: get('pps-val'),
             buffer: get('buffer-usage'),
             total: get('total-logs-val'),
-            status: get('ws-status'),
+            statusText: get('ws-text'),
+            statusDot: get('ws-status'),
+            
             // Sniffer
             snifferToggle: get('sniffer-toggle'),
-            snifferStatus: get('sniffer-status'),
+            snifferStatus: get('sniffer-status-text'),
+            
             // Inputs
             inpTrace: get('filter-trace'),
             inpSvc: get('filter-svc'),
             inpMsg: get('filter-msg'),
             selLvl: get('filter-level'),
+            
             // Buttons
             btnPause: get('btn-pause'),
-            btnExport: get('btn-export'),
             btnClear: get('btn-clear'),
-            btnCloseInsp: get('btn-close-insp'),
-            btnLockCurrent: get('btn-lock-current'),
-            // Forensics
-            rtpUnit: get('rtp-unit'),
-            rtpPT: get('rtp-pt'),
-            rtpSeq: get('rtp-seq'),
-            rtpFlow: get('flow-bar')
+            btnExpRaw: get('btn-export-raw'),
+            btnExpAi: get('btn-export-ai'),
+            btnCloseDetail: get('btn-close-detail'),
+            
+            // Detail View
+            detTs: get('det-ts'),
+            detSvc: get('det-svc'),
+            detTrace: get('det-trace'),
+            jsonView: get('json-viewer'),
+            rawView: get('raw-payload'),
+            tabs: document.querySelectorAll('.tab'),
+            tabContents: document.querySelectorAll('.tab-content')
         };
 
         this.bindEvents();
-        this.startHealthCheck();
-        this.mainLoop();
-
-        // 1s Statistics
+        this.checkSniffer();
+        this.loop();
+        
         setInterval(() => {
             if(this.el.pps) this.el.pps.innerText = state.pps;
+            if(this.el.total) this.el.total.innerText = `${state.logs.length}`;
             if(this.el.buffer) this.el.buffer.innerText = Math.round((state.logs.length / 10000) * 100) + "%";
-            if(this.el.total) this.el.total.innerText = `${state.logs.length} Events Processed`;
             state.pps = 0;
         }, 1000);
     },
 
     bindEvents() {
-        // [SAFE BINDING]: Sadece element varsa event bağla
         const apply = () => { this.filter(); this.render(); };
 
-        if(this.el.inpTrace) this.el.inpTrace.oninput = (e) => { 
-            state.filters.trace = e.target.value.trim().toLowerCase(); 
+        if(this.el.inpTrace) this.el.inpTrace.oninput = (e) => {
+            state.filters.trace = e.target.value.trim().toLowerCase();
             if(!state.filters.trace) state.lockedTrace = null;
-            apply(); 
+            apply();
         };
         if(this.el.inpSvc) this.el.inpSvc.oninput = (e) => { state.filters.svc = e.target.value.toLowerCase(); apply(); };
         if(this.el.inpMsg) this.el.inpMsg.oninput = (e) => { state.filters.msg = e.target.value.toLowerCase(); apply(); };
@@ -76,123 +82,149 @@ const ui = {
 
         if(this.el.btnPause) this.el.btnPause.onclick = (e) => {
             state.paused = !state.paused;
-            e.target.innerText = state.paused ? "▶ RESUME" : "⏸ PAUSE";
-            e.target.classList.toggle('active');
+            e.target.innerText = state.paused ? "RESUME" : "PAUSE";
         };
 
-        if(this.el.btnExport) this.el.btnExport.onclick = () => this.exportForAI();
         if(this.el.btnClear) this.el.btnClear.onclick = () => { state.logs = []; state.filtered = []; this.render(); };
-        if(this.el.btnCloseInsp) this.el.btnCloseInsp.onclick = () => this.el.inspector.classList.remove('open');
-        
-        if(this.el.btnLockCurrent) this.el.btnLockCurrent.onclick = () => this.toggleTraceLock();
+        if(this.el.btnCloseDetail) this.el.btnCloseDetail.onclick = () => this.closeDetail();
+
+        // EXPORT LOGIC
+        if(this.el.btnExpRaw) this.el.btnExpRaw.onclick = () => this.exportLogs('raw');
+        if(this.el.btnExpAi) this.el.btnExpAi.onclick = () => this.exportLogs('ai');
 
         if(this.el.content) this.el.content.onclick = (e) => {
             const row = e.target.closest('.log-row');
-            if (row) this.inspect(parseInt(row.dataset.idx));
+            if(row) this.inspect(parseInt(row.dataset.idx));
+        };
+
+        // Tab Switching
+        this.el.tabs.forEach(btn => {
+            btn.onclick = () => {
+                this.el.tabs.forEach(b => b.classList.remove('active'));
+                this.el.tabContents.forEach(c => c.classList.remove('active'));
+                btn.classList.add('active');
+                document.getElementById(btn.dataset.tab).classList.add('active');
+            };
+        });
+
+        // Trace Link Click
+        if(this.el.detTrace) this.el.detTrace.onclick = () => {
+            const tid = this.el.detTrace.innerText;
+            if(tid && tid !== '-') {
+                state.lockedTrace = tid;
+                this.el.inpTrace.value = tid;
+                this.el.inpTrace.dispatchEvent(new Event('input'));
+            }
         };
 
         if(this.el.snifferToggle) {
             this.el.snifferToggle.onchange = (e) => {
                 const act = e.target.checked ? 'enable' : 'disable';
-                fetch(`/api/sniffer/${act}`, {method:'POST'}).then(() => this.updateSnifferUI(e.target.checked));
+                fetch(`/api/sniffer/${act}`, {method:'POST'}).then(() => this.updateSniffer(e.target.checked));
             };
         }
     },
 
-    startHealthCheck() {
+    checkSniffer() {
         fetch('/api/sniffer/status').then(r=>r.json()).then(d => {
             if(this.el.snifferToggle) this.el.snifferToggle.checked = d.active;
-            this.updateSnifferUI(d.active);
+            this.updateSniffer(d.active);
         }).catch(() => {});
     },
 
-    updateSnifferUI(active) {
+    updateSniffer(active) {
         if(!this.el.snifferStatus) return;
-        this.el.snifferStatus.innerText = active ? "INTERCEPTING" : "STANDBY";
-        this.el.snifferStatus.className = `led ${active ? 'recording' : 'standby'}`;
+        this.el.snifferStatus.innerText = active ? "RECORDING" : "STANDBY";
+        this.el.snifferStatus.style.color = active ? "#f14c4c" : "#858585";
     },
 
-    // AI-OPTIMIZED FORENSIC EXPORT
-    exportForAI() {
-        const trace = state.lockedTrace || state.filters.trace;
-        const data = state.filtered.map(l => ({
-            ts: l.ts,
-            svc: l.resource['service.name'],
-            evt: l.event,
-            msg: l.message,
-            trace: l.trace_id,
-            details: l.attributes
-        }));
+    // ----------------------------------------------------
+    // DUAL EXPORT ENGINE
+    // ----------------------------------------------------
+    exportLogs(type) {
+        const data = state.filtered;
+        if(data.length === 0) return alert("No logs to export.");
 
-        const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+        let content = "";
+        let filename = "";
+
+        if (type === 'raw') {
+            // Tam döküm (Adli Kanıt)
+            content = JSON.stringify(data, null, 2);
+            filename = `sentiric_forensic_${Date.now()}.json`;
+        } else {
+            // AI Context (Sohbet Özeti)
+            content = "SYSTEM EVENT LOG TIMELINE:\n";
+            data.forEach(l => {
+                content += `[${l.ts}] [${l.severity}] [${l.resource['service.name']}] ${l.event}: ${l.message}`;
+                if (l.trace_id) content += ` (Trace: ${l.trace_id})`;
+                content += "\n";
+                // Eğer hata varsa detayı ekle
+                if (l.severity === 'ERROR' || l.severity === 'WARN') {
+                     content += `   Details: ${JSON.stringify(l.attributes)}\n`;
+                }
+            });
+            filename = `sentiric_ai_context_${Date.now()}.txt`;
+        }
+
+        const blob = new Blob([content], {type: type === 'raw' ? 'application/json' : 'text/plain'});
+        const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = `sentiric_forensic_${trace || 'global'}_${Date.now()}.json`;
+        a.href = url;
+        a.download = filename;
         a.click();
-    },
-
-    toggleTraceLock() {
-        const log = state.logs.find(l => l._idx === state.selectedIdx);
-        if(!log) return;
-        const tid = log.trace_id || log.attributes['sip.call_id'];
-        if(!tid) return alert("Packet has no Trace ID to lock.");
-
-        state.lockedTrace = (state.lockedTrace === tid) ? null : tid;
-        this.el.inpTrace.value = state.lockedTrace || "";
-        this.el.btnLockCurrent.innerText = state.lockedTrace ? "🔓 UNLOCK STREAM" : "🔗 LOCK THIS TRACE";
-        this.filter();
-        this.render();
     },
 
     filter() {
         const f = state.filters;
-        const lock = state.lockedTrace ? state.lockedTrace.toLowerCase() : f.trace;
-
         state.filtered = state.logs.filter(l => {
-            if (lock) {
+            if (f.level === 'WARN' && (l.severity === 'INFO' || l.severity === 'DEBUG')) return false;
+            if (f.level === 'ERROR' && l.severity !== 'ERROR') return false;
+            
+            if (f.svc && !l.resource['service.name'].includes(f.svc)) return false;
+            if (f.msg && !l.message.toLowerCase().includes(f.msg)) return false;
+
+            const traceTarget = state.lockedTrace || f.trace;
+            if (traceTarget) {
                 const tid = (l.trace_id || '').toLowerCase();
                 const cid = (l.attributes && l.attributes['sip.call_id'] ? l.attributes['sip.call_id'] : '').toLowerCase();
-                if (!tid.includes(lock) && !cid.includes(lock)) return false;
+                if (!tid.includes(traceTarget) && !cid.includes(traceTarget)) return false;
             }
-            if (f.level !== 'ALL' && l.severity !== f.level && !(f.level === 'WARN' && l.severity === 'ERROR')) return false;
-            if (f.svc && !l.resource['service.name'].toLowerCase().includes(f.svc)) return false;
-            if (f.msg && !l.message.toLowerCase().includes(f.msg)) return false;
             return true;
         });
     },
 
-    mainLoop() {
-        const loop = () => {
-            if (state.hasNew && !state.paused) {
-                this.filter();
-                this.render();
-                state.hasNew = false;
-            }
-            if (!state.paused && this.el.scroller && !this.el.inspector.classList.contains('open')) {
-                this.el.scroller.scrollTop = this.el.scroller.scrollHeight;
-            }
-            requestAnimationFrame(loop);
-        };
-        loop();
+    loop() {
+        if (state.hasNew && !state.paused) {
+            this.filter();
+            this.render();
+            state.hasNew = false;
+        }
+        if (!state.paused && !state.selectedLog && this.el.scroller) {
+            this.el.scroller.scrollTop = this.el.scroller.scrollHeight;
+        }
+        requestAnimationFrame(() => this.loop());
     },
 
     render() {
         if (!this.el.content) return;
-        const data = state.filtered.slice(-250); 
-        this.el.content.innerHTML = data.map(log => {
-            const time = log.ts ? log.ts.split('T')[1].slice(0, 12) : '--:--';
-            const isSel = state.selectedIdx === log._idx ? 'selected' : '';
+        // Performans için sadece son 500 satırı çiz
+        const slice = state.filtered.slice(-500);
+        
+        this.el.content.innerHTML = slice.map(log => {
+            const time = log.ts.split('T')[1].replace('Z','');
             const svc = log.resource['service.name'];
-            let tags = '';
-            if (log.smart_tags) log.smart_tags.forEach(t => tags += `<span class="tag tag-${t}">${t}</span>`);
-
+            const sel = state.selectedLog === log ? 'selected' : '';
+            const sevClass = `lvl-${log.severity}`;
+            const evtColor = log.event.includes('SIP') ? '#569cd6' : (log.event.includes('RTP') ? '#c586c0' : '#4ec9b0');
+            
             return `
-                <div class="log-row ${isSel}" data-idx="${log._idx}">
-                    <span style="color:#555">${time}</span>
-                    <span class="sev-${log.severity}">${log.severity}</span>
-                    <span style="color:#c084fc">${svc}</span>
-                    <span style="color:#fff; font-weight:bold">${log.event}</span>
-                    <span style="color:#aaa; overflow:hidden; text-overflow:ellipsis;">${tags} ${this.escape(log.message)}</span>
+                <div class="log-row ${sel}" data-idx="${log._idx}">
+                    <span style="color:#666">${time}</span>
+                    <span class="${sevClass}">${log.severity}</span>
+                    <span style="color:#dcdcaa">${svc}</span>
+                    <span style="color:${evtColor}">${log.event}</span>
+                    <span style="color:#9cdcfe; overflow:hidden; text-overflow:ellipsis;">${this.esc(log.message)}</span>
                 </div>
             `;
         }).join('');
@@ -201,38 +233,60 @@ const ui = {
     inspect(idx) {
         const log = state.logs.find(l => l._idx === idx);
         if (!log) return;
-        state.selectedIdx = idx;
-        this.el.inspector.classList.add('open');
-        this.render();
+        state.selectedLog = log;
+        state.paused = true; // Auto-pause on inspect
 
-        // RTP Diagnostics
-        const isRtp = log.smart_tags && log.smart_tags.includes('RTP');
-        if(this.el.rtpUnit) {
-            this.el.rtpUnit.style.display = isRtp ? 'block' : 'none';
-            if (isRtp) {
-                this.el.rtpPT.innerText = log.attributes['rtp.payload_type'] || '0';
-                this.el.rtpSeq.innerText = log.attributes['rtp.sequence'] || 'N/A';
-                const size = log.attributes['net.packet_len'] || 0;
-                this.el.rtpFlow.style.width = Math.min((size / 200) * 100, 100) + "%";
-            }
+        this.el.detailPane.classList.add('open');
+        this.render(); // Highlight row
+
+        // Meta Info
+        if(this.el.detTs) this.el.detTs.innerText = log.ts;
+        if(this.el.detSvc) this.el.detSvc.innerText = log.resource['service.name'];
+        if(this.el.detTrace) {
+            const tid = log.trace_id || log.attributes['sip.call_id'] || '-';
+            this.el.detTrace.innerText = tid;
+            this.el.detTrace.style.cursor = tid !== '-' ? 'pointer' : 'default';
         }
 
-        if(this.el.inspBody) {
-            this.el.inspBody.innerHTML = `
-                <div style="margin-bottom:20px; border-bottom:1px solid #333; padding-bottom:15px;">
-                    <div style="font-size:18px; font-weight:900; color:var(--accent);">${log.event}</div>
-                    <div style="font-size:10px; color:#555; margin-top:5px;">TIMESTAMP: ${log.ts}</div>
-                    <div style="font-size:10px; color:var(--accent)">TRACE: ${log.trace_id || 'N/A'}</div>
-                </div>
-                <pre style="color:#a5d6ff; background:#000; padding:15px; border-radius:4px; border:1px solid #222;">${JSON.stringify(log.attributes, null, 2)}</pre>
-            `;
-        }
+        // Formatted JSON
+        if(this.el.jsonView) this.el.jsonView.innerHTML = this.syntaxHighlight(log.attributes);
+
+        // Raw Payload Tab
+        const rawPayload = log.attributes['payload'] || log.attributes['packet.summary'] || "No raw payload captured.";
+        if(this.el.rawView) this.el.rawView.innerText = rawPayload;
     },
 
-    escape(s) { return s ? s.toString().replace(/&/g, "&amp;").replace(/</g, "&lt;") : ""; }
+    closeDetail() {
+        this.el.detailPane.classList.remove('open');
+        state.selectedLog = null;
+        state.paused = false;
+        this.render();
+    },
+
+    esc(s) { return s ? s.toString().replace(/&/g, "&amp;").replace(/</g, "&lt;") : ""; },
+    
+    syntaxHighlight(json) {
+        if (!json) return "{}";
+        const str = JSON.stringify(json, undefined, 2);
+        return str.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
+            let cls = '#9cdcfe';
+            if (/^"/.test(match)) {
+                if (/:$/.test(match)) {
+                    return `<span style="color:#dcdcaa">${match.replace(/:/,'')}</span>:`;
+                } else {
+                    return `<span style="color:#ce9178">${match}</span>`;
+                }
+            } else if (/true|false/.test(match)) {
+                return `<span style="color:#569cd6">${match}</span>`;
+            } else if (/null/.test(match)) {
+                return `<span style="color:#569cd6">${match}</span>`;
+            }
+            return `<span style="color:#b5cea8">${match}</span>`;
+        });
+    }
 };
 
-// --- INIT ---
+// Start
 let count = 0;
 new LogStream(CONFIG.WS_URL, 
     (log) => {
@@ -240,13 +294,15 @@ new LogStream(CONFIG.WS_URL,
         state.logs.push(log);
         state.pps++;
         state.hasNew = true;
-        if(state.logs.length > 10000) state.logs.shift();
+        if(state.logs.length > CONFIG.MAX_LOGS) state.logs.shift();
     },
     (status) => {
-        const el = document.getElementById('ws-status');
-        if(!el) return;
-        el.innerText = status ? "ONLINE" : "OFFLINE";
-        el.className = `status-pill ${status ? 'connected' : 'offline'}`;
+        const txt = document.getElementById('ws-text');
+        const dot = document.getElementById('ws-status');
+        if(txt && dot) {
+            txt.innerText = status ? "CONNECTED" : "DISCONNECTED";
+            dot.className = `status-dot ${status ? 'online' : 'offline'}`;
+        }
     }
 ).connect();
 
