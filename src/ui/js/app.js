@@ -1,4 +1,3 @@
-// src/ui/js/app.js
 import { LogStream } from './websocket.js';
 import { visualizer } from './visualizer.js';
 
@@ -7,215 +6,179 @@ const state = {
     filteredLogs: [],
     pps: 0,
     isPaused: false,
-    selectedLog: null,
     autoScroll: true,
+    selectedLog: null,
+    lockedTraceId: null, // TRACE LOCK
     filters: { trace: '', svc: '', msg: '', level: 'ALL' }
 };
 
 const ui = {
-    // Cache Elements (Güvenli atama)
+    // DOM Cache
     el: {},
 
     init() {
-        // [CRITICAL FIX]: DOM elementlerini güvenli bir şekilde cache'le.
-        // Element bulunamazsa uygulama çökmesin diye null kontrolü yapacağız.
+        // Güvenli Element Seçimi
+        const get = (id) => document.getElementById(id);
+        
         this.el = {
-            pps: document.getElementById('pps-val'),
-            total: document.getElementById('total-logs-val'),
-            buffer: document.getElementById('buffer-usage'),
-            status: document.getElementById('ws-status'),
-            wrapper: document.getElementById('console-wrapper'),
-            content: document.getElementById('console-content'),
-            inspector: document.getElementById('inspector-panel'),
-            detail: document.getElementById('inspector-detail'),
-            mediaModule: document.getElementById('media-player-module'),
-            audioCodec: document.getElementById('audio-codec-info'),
-            audioPt: document.getElementById('audio-pt-info'),
-            
-            // Sniffer
-            snifferToggle: document.getElementById('sniffer-toggle'),
-            snifferStatus: document.getElementById('sniffer-status'),
-            snifferWidget: document.querySelector('.sniffer-widget'),
+            pps: get('pps-val'),
+            total: get('total-logs-val'),
+            buffer: get('buffer-usage'),
+            status: get('ws-status'),
+            scroller: get('log-scroller'),
+            content: get('log-content'),
+            inspector: get('inspector'),
+            inspBody: get('insp-body'),
+            snifferToggle: get('sniffer-toggle'),
+            snifferStatus: get('sniffer-status-text'),
             
             // Inputs
-            inpTrace: document.getElementById('filter-trace'),
-            inpSvc: document.getElementById('filter-svc'),
-            inpMsg: document.getElementById('filter-msg'),
-            selLevel: document.getElementById('filter-level'),
+            inpTrace: get('filter-trace'),
+            inpSvc: get('filter-svc'),
+            inpMsg: get('filter-msg'),
+            selLevel: get('filter-level'),
             
             // Buttons
-            btnPause: document.getElementById('btn-pause'),
-            btnClear: document.getElementById('btn-clear'),
-            btnCloseInspector: document.getElementById('btn-close-inspector'),
-            btnFollowTrace: document.getElementById('btn-follow-trace'),
-            btnCopyJson: document.getElementById('btn-copy-json'),
+            btnPause: get('btn-pause'),
+            btnClear: get('btn-clear'),
+            btnCloseInsp: get('btn-close-insp'),
+            btnLockTrace: get('btn-lock-trace'),
+            
+            // Media
+            mediaModule: get('rtp-player'),
+            codecBadge: get('rtp-codec-badge')
         };
 
-        this.setupFilters();
-        this.setupControls();
+        this.bindEvents();
         this.setupSniffer();
         this.startLoop();
         
-        // 1 saniyelik istatistik döngüsü (Null check eklendi)
+        // 1 saniyelik stats
         setInterval(() => {
-            if (this.el.pps) this.el.pps.innerText = state.pps;
-            if (this.el.total) this.el.total.innerText = state.logs.length;
-            if (this.el.buffer && typeof CONFIG !== 'undefined') {
-                this.el.buffer.innerText = Math.round((state.logs.length / CONFIG.MAX_LOGS) * 100) + "%";
-            }
-            
+            if(this.el.pps) this.el.pps.innerText = state.pps;
+            if(this.el.total) this.el.total.innerText = state.logs.length;
+            if(this.el.buffer) this.el.buffer.innerText = Math.round((state.logs.length / 10000) * 100) + "%";
             visualizer.pushData(state.pps);
             state.pps = 0;
         }, 1000);
     },
 
-    setupSniffer() {
-        if (!this.el.snifferToggle || !this.el.snifferStatus) return;
+    bindEvents() {
+        const apply = () => { this.filterLogs(); this.render(); };
+        
+        this.el.inpTrace.oninput = (e) => {
+            // Eğer elle silinirse kilidi aç
+            if(e.target.value === '') state.lockedTraceId = null;
+            state.filters.trace = e.target.value.toLowerCase(); 
+            apply();
+        };
+        this.el.inpSvc.oninput = (e) => { state.filters.svc = e.target.value.toLowerCase(); apply(); };
+        this.el.inpMsg.oninput = (e) => { state.filters.msg = e.target.value.toLowerCase(); apply(); };
+        this.el.selLevel.onchange = (e) => { state.filters.level = e.target.value; apply(); };
 
-        // İlk durumu çek
-        fetch('/api/sniffer/status')
-            .then(r => r.json())
-            .then(d => {
-                this.el.snifferToggle.checked = d.active;
-                this.updateSnifferVisuals(d.active);
-            }).catch(e => console.error("Sniffer API offline", e));
+        this.el.btnPause.onclick = () => {
+            state.isPaused = !state.isPaused;
+            state.autoScroll = !state.isPaused;
+            this.el.btnPause.innerText = state.isPaused ? "▶ RESUME" : "⏸ PAUSE";
+            this.el.btnPause.style.color = state.isPaused ? "#eab308" : "#fff";
+        };
 
-        // Toggle Event
-        this.el.snifferToggle.addEventListener('change', (e) => {
-            const endpoint = e.target.checked ? 'enable' : 'disable';
-            fetch(`/api/sniffer/${endpoint}`, { method: 'POST' })
-                .then(r => r.json())
-                .then(res => {
-                    this.updateSnifferVisuals(e.target.checked);
-                    console.log(`Sniffer ${res.status}: ${res.message}`);
-                }).catch(err => {
-                    console.error("Sniffer command failed:", err);
-                    // Hata olursa UI switch'ini geri al
-                    e.target.checked = !e.target.checked;
-                });
+        this.el.btnClear.onclick = () => { state.logs = []; state.filteredLogs = []; this.render(); };
+        
+        this.el.btnCloseInsp.onclick = () => {
+            this.el.inspector.classList.remove('open');
+            state.selectedLog = null;
+            this.render();
+        };
+
+        // TRACE LOCK LOGIC
+        this.el.btnLockTrace.onclick = () => {
+            if (!state.selectedLog) return;
+            
+            const tid = state.selectedLog.trace_id || state.selectedLog.attributes['sip.call_id'];
+            if (!tid) {
+                alert("No Trace ID found in this packet.");
+                return;
+            }
+
+            // Toggle Lock
+            if (state.lockedTraceId === tid) {
+                state.lockedTraceId = null;
+                this.el.inpTrace.value = "";
+                this.el.btnLockTrace.innerText = "🔒 LOCK TRACE";
+                this.el.btnLockTrace.classList.remove('active');
+            } else {
+                state.lockedTraceId = tid;
+                this.el.inpTrace.value = tid;
+                this.el.btnLockTrace.innerText = "🔓 UNLOCK TRACE";
+                this.el.btnLockTrace.classList.add('active');
+            }
+            
+            // Trigger Filter
+            this.el.inpTrace.dispatchEvent(new Event('input'));
+        };
+
+        // Row Click Delegation
+        this.el.content.addEventListener('click', (e) => {
+            const row = e.target.closest('.row');
+            if (row) this.inspect(row.dataset.idx);
         });
     },
 
-    updateSnifferVisuals(isActive) {
-        if (!this.el.snifferStatus || !this.el.snifferWidget) return;
-
-        if (isActive) {
-            this.el.snifferStatus.innerText = "RECORDING";
-            this.el.snifferStatus.className = "val recording blink"; // blink sınıfı direkt eklendi
-            this.el.snifferWidget.classList.add("active");
-        } else {
-            this.el.snifferStatus.innerText = "STANDBY";
-            this.el.snifferStatus.className = "val standby";
-            this.el.snifferWidget.classList.remove("active");
-        }
-    },
-
-    setupControls() {
-        // Pause Button
-        if (this.el.btnPause) {
-            this.el.btnPause.onclick = (e) => {
-                state.isPaused = !state.isPaused;
-                state.autoScroll = !state.isPaused;
-                e.target.innerText = state.isPaused ? "▶ RESUME" : "⏸ PAUSE";
-                e.target.style.color = state.isPaused ? "var(--warning)" : "#fff";
-            };
-        }
-
-        // Clear Button
-        if (this.el.btnClear) {
-            this.el.btnClear.onclick = () => {
-                state.logs = [];
-                state.filteredLogs = [];
-                this.render();
-            };
-        }
-
-        // Inspector Close
-        if (this.el.btnCloseInspector && this.el.inspector) {
-            this.el.btnCloseInspector.onclick = () => {
-                this.el.inspector.classList.remove('open');
-                state.selectedLog = null;
-                this.render();
-            };
-        }
-
-        // WireShark "Follow Trace" Button
-        if (this.el.btnFollowTrace && this.el.inpTrace) {
-            this.el.btnFollowTrace.onclick = () => {
-                if (state.selectedLog && state.selectedLog.trace_id) {
-                    this.el.inpTrace.value = state.selectedLog.trace_id;
-                    state.filters.trace = state.selectedLog.trace_id.toLowerCase();
-                    this.filterLogs();
-                    this.render();
-                } else if (state.selectedLog && state.selectedLog.attributes && state.selectedLog.attributes['sip.call_id']) {
-                    this.el.inpTrace.value = state.selectedLog.attributes['sip.call_id'];
-                    state.filters.trace = state.selectedLog.attributes['sip.call_id'].toLowerCase();
-                    this.filterLogs();
-                    this.render();
-                }
-            };
-        }
-
-        // Copy JSON
-        if (this.el.btnCopyJson) {
-            this.el.btnCopyJson.onclick = (e) => {
-                if (state.selectedLog) {
-                    navigator.clipboard.writeText(JSON.stringify(state.selectedLog, null, 2));
-                    const orig = e.target.innerText;
-                    e.target.innerText = "✅ COPIED";
-                    setTimeout(() => e.target.innerText = orig, 2000);
-                }
-            };
-        }
-
-        // Click Event Delegation for Rows
-        if (this.el.content) {
-            this.el.content.addEventListener('click', (e) => {
-                const row = e.target.closest('.log-row');
-                if (row) this.inspectLog(row.dataset.id);
-            });
-        }
-    },
-
-    setupFilters() {
-        const apply = () => { this.filterLogs(); this.render(); };
+    setupSniffer() {
+        if(!this.el.snifferToggle) return;
         
-        if (this.el.inpTrace) this.el.inpTrace.oninput = (e) => { state.filters.trace = e.target.value.toLowerCase(); apply(); };
-        if (this.el.inpSvc) this.el.inpSvc.oninput = (e) => { state.filters.svc = e.target.value.toLowerCase(); apply(); };
-        if (this.el.inpMsg) this.el.inpMsg.oninput = (e) => { state.filters.msg = e.target.value.toLowerCase(); apply(); };
-        if (this.el.selLevel) this.el.selLevel.onchange = (e) => { state.filters.level = e.target.value; apply(); };
+        // Initial Status
+        fetch('/api/sniffer/status').then(r=>r.json()).then(d => {
+            this.el.snifferToggle.checked = d.active;
+            this.updateSnifferUI(d.active);
+        }).catch(() => {});
+
+        this.el.snifferToggle.addEventListener('change', (e) => {
+            const act = e.target.checked ? 'enable' : 'disable';
+            fetch(`/api/sniffer/${act}`, {method:'POST'}).then(() => this.updateSnifferUI(e.target.checked));
+        });
+    },
+
+    updateSnifferUI(active) {
+        this.el.snifferStatus.innerText = active ? "RECORDING" : "STANDBY";
+        this.el.snifferStatus.className = active ? "status-text recording" : "status-text standby";
     },
 
     filterLogs() {
         const f = state.filters;
         state.filteredLogs = state.logs.filter(l => {
-            if (f.level !== 'ALL' && l.severity !== f.level && !(f.level === 'WARN' && l.severity === 'ERROR')) return false;
-            
-            const svcName = l.resource && l.resource['service.name'] ? l.resource['service.name'].toLowerCase() : '';
-            if (f.svc && !svcName.includes(f.svc)) return false;
-            
-            if (f.trace) {
+            if (state.lockedTraceId) {
+                // Eğer kilitliyse SADECE o trace'i göster (Hızlı yol)
                 const tid = (l.trace_id || '').toLowerCase();
-                const cid = (l.attributes && l.attributes['sip.call_id'] ? l.attributes['sip.call_id'] : '').toLowerCase();
-                if (!tid.includes(f.trace) && !cid.includes(f.trace)) return false;
+                const cid = (l.attributes['sip.call_id'] || '').toLowerCase();
+                const lock = state.lockedTraceId.toLowerCase();
+                if (!tid.includes(lock) && !cid.includes(lock)) return false;
+            } else {
+                // Normal arama
+                if (f.trace) {
+                     const tid = (l.trace_id || '').toLowerCase();
+                     const cid = (l.attributes['sip.call_id'] || '').toLowerCase();
+                     if (!tid.includes(f.trace) && !cid.includes(f.trace)) return false;
+                }
             }
-            
-            const msg = (l.message || '').toLowerCase();
-            if (f.msg && !msg.includes(f.msg)) return false;
-            
+
+            if (f.level !== 'ALL' && l.severity !== f.level && !(f.level === 'WARN' && l.severity === 'ERROR')) return false;
+            if (f.svc && !l.resource['service.name'].toLowerCase().includes(f.svc)) return false;
+            if (f.msg && !l.message.toLowerCase().includes(f.msg)) return false;
             return true;
         });
     },
 
     startLoop() {
         const loop = () => {
-            if (state.hasNewLogs && !state.isPaused) {
+            if (state.hasNew && !state.isPaused) {
                 this.filterLogs();
                 this.render();
-                state.hasNewLogs = false;
+                state.hasNew = false;
             }
-            if (state.autoScroll && !state.isPaused && !state.selectedLog && this.el.wrapper) {
-                this.el.wrapper.scrollTop = this.el.wrapper.scrollHeight;
+            if (state.autoScroll && !state.isPaused && !state.selectedLog) {
+                this.el.scroller.scrollTop = this.el.scroller.scrollHeight;
             }
             requestAnimationFrame(loop);
         };
@@ -223,159 +186,108 @@ const ui = {
     },
 
     render() {
-        if (!this.el.content) return;
-
-        const data = state.filteredLogs.slice(-250); // Son 250 logu çiz (Performans için)
-        
-        this.el.content.innerHTML = data.map(log => {
-            // Güvenli erişim
-            const tsParts = log.ts ? log.ts.split('T') : ['','00:00:00'];
-            const timeStr = tsParts.length > 1 ? tsParts[1].slice(0, 12) : log.ts;
-            const svc = log.resource && log.resource['service.name'] ? log.resource['service.name'] : 'sys';
-            const evt = log.event || 'UNKNOWN';
-            const severity = log.severity || 'INFO';
+        const data = state.filteredLogs.slice(-200);
+        this.el.content.innerHTML = data.map((log, idx) => {
+            const time = log.ts.split('T')[1].slice(0, 12);
+            const svc = log.resource['service.name'];
+            const sel = state.selectedLog === log ? 'selected' : '';
             
-            const isSel = state.selectedLog === log ? 'selected' : '';
-            const color = severity === 'ERROR' ? '#f87171' : (severity === 'WARN' ? '#facc15' : '#a1a1aa');
-            
-            let tagsHtml = '';
-            if (log.smart_tags && Array.isArray(log.smart_tags)) {
-                log.smart_tags.forEach(t => tagsHtml += `<span class="tag tag-${t}">${t}</span>`);
-            }
+            // Renkler
+            let colSev = '#a1a1aa';
+            if (log.severity === 'ERROR') colSev = '#f87171';
+            else if (log.severity === 'WARN') colSev = '#facc15';
+            else if (log.severity === 'INFO') colSev = '#60a5fa';
 
-            // SIP Packet Summary Extract
-            let summary = this.escape(log.message);
-            if (log.attributes && log.attributes['packet.summary']) {
-                const method = log.attributes['sip.method'] || '';
-                summary = `<span style="color:var(--info)">[${method}]</span> ${this.escape(log.attributes['packet.summary'])}`;
-            }
+            // Özel Tagler
+            let tags = '';
+            if (log.smart_tags) log.smart_tags.forEach(t => tags += `<span class="tag tag-${t}">${t}</span>`);
 
             return `
-                <div class="log-row ${isSel}" data-id="${log.ts}-${svc}">
-                    <span style="color:#71717a">${timeStr}</span>
-                    <span class="sev-badge sev-${severity}">${severity}</span>
-                    <span style="color:#a855f7">${svc}</span>
-                    <span style="color:#e2e8f0; font-weight:bold;">${evt}</span>
-                    <span class="col-msg">${tagsHtml} <span>${summary}</span></span>
+                <div class="row ${sel}" data-idx="${log._idx}">
+                    <span style="color:#555">${time}</span>
+                    <span style="color:${colSev}; font-weight:bold;">${log.severity}</span>
+                    <span style="color:#c084fc">${svc}</span>
+                    <span style="color:#fff">${log.event}</span>
+                    <span style="overflow:hidden; text-overflow:ellipsis;">${tags} ${this.esc(log.message)}</span>
                 </div>
             `;
         }).join('');
     },
 
-    inspectLog(id) {
-        if (!this.el.inspector || !this.el.detail) return;
-
-        const log = state.filteredLogs.find(l => {
-            const svc = l.resource && l.resource['service.name'] ? l.resource['service.name'] : 'sys';
-            return `${l.ts}-${svc}` === id;
-        });
-        
+    inspect(idx) {
+        // Orijinal log dizisinden bul (Filtrelenmişten değil, çünkü index global)
+        // NOT: Loglara _idx eklemek için websocket handler'ı güncellemeliyiz, 
+        // ya da burada basitçe referans buluyoruz.
+        const log = state.logs.find(l => l._idx == idx);
         if (!log) return;
 
         state.selectedLog = log;
         state.isPaused = true;
-        
-        if (this.el.btnPause) {
-            this.el.btnPause.innerText = "▶ RESUME";
-            this.el.btnPause.style.color = "var(--warning)";
-        }
+        this.el.btnPause.innerText = "▶ RESUME";
         
         this.el.inspector.classList.add('open');
-        this.render(); // Seçim rengini güncelle
+        this.render();
 
-        // Clone attributes to manipulate for display
-        let displayAttrs = log.attributes ? JSON.parse(JSON.stringify(log.attributes)) : {};
-        
-        let payloadView = "";
-        if (displayAttrs['payload']) {
-            payloadView = `
-            <div style="margin-bottom:10px; color:var(--info); font-weight:bold;">RAW PAYLOAD:</div>
-            <pre style="color:#e2e8f0; margin-bottom:20px; border-left:2px solid var(--info); padding-left:10px; white-space:pre-wrap;">${this.escape(displayAttrs['payload'])}</pre>
-            <div style="margin-bottom:10px; color:var(--accent); font-weight:bold;">ATTRIBUTES:</div>
-            `;
-            delete displayAttrs['payload']; // JSON tree'den çıkart
+        // 1. Media Player Check
+        if (log.smart_tags && (log.smart_tags.includes('RTP') || log.smart_tags.includes('DTMF'))) {
+            this.el.mediaModule.style.display = 'block';
+            let pt = log.attributes['rtp.payload_type'];
+            this.el.codecBadge.innerText = pt === 101 ? "DTMF" : (pt === 0 ? "PCMU" : (pt === 8 ? "PCMA" : "G.729"));
+        } else {
+            this.el.mediaModule.style.display = 'none';
         }
 
-        this.el.detail.innerHTML = `
+        // 2. JSON View
+        let attrs = {...log.attributes};
+        let payloadHtml = "";
+        if (attrs.payload) {
+            payloadHtml = `<div style="color:#58a6ff; margin-bottom:5px;">RAW PAYLOAD:</div><pre style="border-left:2px solid #58a6ff; padding-left:10px; margin-bottom:20px;">${this.esc(attrs.payload)}</pre>`;
+            delete attrs.payload;
+        }
+
+        this.el.inspBody.innerHTML = `
             <div style="margin-bottom:20px;">
-                <div style="font-size:16px; color:#fff; font-weight:800; margin-bottom:5px;">${log.event || 'UNKNOWN'}</div>
-                <div style="color:var(--text-muted); font-size:10px;">TIMESTAMP: ${log.ts}</div>
-                <div style="color:var(--text-muted); font-size:10px;">TRACE ID: ${log.trace_id || 'N/A'}</div>
+                <div style="font-size:16px; font-weight:800; color:#fff;">${log.event}</div>
+                <div style="color:#888; font-size:10px;">${log.ts} • ${log.resource['service.name']}</div>
+                <div style="color:#888; font-size:10px;">TRACE: ${log.trace_id || 'N/A'}</div>
             </div>
-            ${payloadView}
-            <pre>${this.syntaxHighlight(displayAttrs)}</pre>
+            ${payloadHtml}
+            <pre>${this.syntax(attrs)}</pre>
         `;
-
-        // MEDIA MODULE LOGIC
-        if (this.el.mediaModule) {
-            if (log.smart_tags && (log.smart_tags.includes('RTP') || log.smart_tags.includes('DTMF'))) {
-                this.el.mediaModule.style.display = 'block';
-                let pt = displayAttrs['rtp.payload_type'];
-                
-                if (this.el.audioPt) this.el.audioPt.innerText = pt;
-                if (this.el.audioCodec) {
-                    this.el.audioCodec.innerText = pt === 0 ? "PCMU (G.711u)" : (pt === 8 ? "PCMA (G.711a)" : (pt === 101 ? "DTMF" : "Unknown"));
-                }
-            } else {
-                this.el.mediaModule.style.display = 'none';
-            }
-        }
     },
 
-    escape(str) {
-        if (!str) return "";
-        return str.toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>");
-    },
-    
-    syntaxHighlight(json) {
-        if (!json) return "";
-        if (typeof json != 'string') json = JSON.stringify(json, undefined, 2);
-        json = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
+    esc(s) { return s ? s.toString().replace(/&/g, "&amp;").replace(/</g, "&lt;") : ""; },
+    syntax(json) {
+        return JSON.stringify(json, null, 2).replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, match => {
+            let cls = '#a5d6ff';
             if (/^"/.test(match)) {
-                if (/:$/.test(match)) {
-                    return `<span style="color:#7dd3fc">${match.replace(/:/,'')}</span>:`;
-                } else {
-                    return `<span style="color:#fdba74">${match}</span>`;
-                }
-            }
-            return `<span style="color:#86efac">${match}</span>`;
+                if (/:$/.test(match)) cls = '#79c0ff'; // Key
+                else cls = '#a5d6ff'; // String
+            } else cls = '#d2a8ff'; // Number/Bool
+            return `<span style="color:${cls}">${match}</span>`;
         });
     }
 };
 
-// WebSocket Init
-document.addEventListener('DOMContentLoaded', () => {
-    // Config yüklenmiş mi kontrol et
-    if (typeof CONFIG === 'undefined') {
-        console.error("CRITICAL: config.js is missing or failed to load.");
-        return;
+// WebSocket
+let logCounter = 0;
+new LogStream(CONFIG.WS_URL, 
+    (log) => {
+        log._idx = logCounter++; // Unique ID for UI Selection
+        state.logs.push(log);
+        state.pps++;
+        state.hasNew = true;
+        if (state.logs.length > CONFIG.MAX_LOGS) state.logs.shift();
+    },
+    (status) => {
+        const el = document.getElementById('ws-status');
+        if(!el) return;
+        el.innerText = status ? "● ONLINE" : "● OFFLINE";
+        el.className = status ? "status-pill connected" : "status-pill disconnected";
     }
+).connect();
 
+document.addEventListener('DOMContentLoaded', () => {
     visualizer.init();
     ui.init();
-
-    const badge = document.getElementById('ws-status');
-    
-    new LogStream(CONFIG.WS_URL, 
-        (log) => {
-            state.logs.push(log);
-            state.pps++;
-            state.hasNewLogs = true;
-            if(state.logs.length > CONFIG.MAX_LOGS) state.logs.shift();
-        },
-        (status) => {
-            if (!badge) return;
-            if(status) {
-                badge.innerText = "ONLINE";
-                badge.className = "status-badge connected";
-            } else {
-                badge.innerText = "OFFLINE";
-                badge.className = "status-badge disconnected";
-            }
-        }
-    ).connect();
-    
-    // Debug için window objesine bağla
-    window.ui = ui;
 });
