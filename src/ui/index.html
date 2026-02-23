@@ -3,26 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SENTIRIC | PANOPTICON KINETIC</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💠</text></svg>">
+    <title>SENTIRIC | PANOPTICON KINETIC v5.1</title>
     <link rel="stylesheet" href="/ui/css/theme.css">
     <link rel="stylesheet" href="/ui/css/layout.css">
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
 </head>
 <body>
     <div id="app">
-        <!-- HEADER -->
+        <!-- GLOBAL MONITOR HEADER -->
         <header>
-            <div class="brand-section">
+            <div class="brand">
                 <span class="logo-pulse">💠</span>
                 <div class="brand-text">
                     <span class="title">SENTIRIC <span class="highlight">PANOPTICON</span></span>
-                    <span class="subtitle">KINETIC INTELLIGENCE NODE v5.0</span>
+                    <span class="subtitle">TACTICAL SIGNAL INTELLIGENCE</span>
                 </div>
                 <div id="ws-status" class="status-indicator offline">● DISCONNECTED</div>
             </div>
 
-            <!-- TACTICAL CENTER -->
             <div class="command-center">
                 <div class="sniffer-module">
                     <div class="sniffer-label">
@@ -36,111 +34,87 @@
                 </div>
             </div>
 
-            <!-- METRICS & VISUALIZER -->
-            <div class="metrics-section">
-                <!-- LIVE OSCILLOSCOPE -->
+            <div class="metrics-panel">
                 <div class="scope-container">
                     <canvas id="scope-chart"></canvas>
-                    <div class="scope-overlay">LIVE SIGNAL</div>
                 </div>
-                
-                <div class="stats-grid">
-                    <div class="stat-item">
-                        <span class="stat-val" id="pps-val">0</span>
-                        <span class="stat-lbl">PPS</span>
-                    </div>
-                    <div class="stat-item">
-                        <span class="stat-val" id="buffer-usage">0%</span>
-                        <span class="stat-lbl">BUFFER</span>
-                    </div>
+                <div class="metric-group">
+                    <div class="m-item"><span id="pps-val">0</span><small>PPS</small></div>
+                    <div class="m-item"><span id="buffer-usage">0%</span><small>BUF</small></div>
                 </div>
             </div>
         </header>
 
-        <!-- TOOLBAR (Hata nedeni olan ID'ler kontrol edildi) -->
+        <!-- WIRETAP TOOLBAR -->
         <div id="toolbar">
-            <div class="search-container">
+            <div class="search-box">
                 <span class="icon">🔍</span>
-                <input type="text" id="filter-trace" placeholder="TRACE / CALL ID LOCK..." class="search-input">
+                <input type="text" id="filter-trace" placeholder="LOCK TRACE / CALL-ID...">
             </div>
-            
-            <div class="sep"></div>
-            
-            <div class="filters">
-                <input type="text" id="filter-svc" placeholder="Service..." class="glass-input small">
-                <!-- EKSİK OLAN ELEMENT GERİ GELDİ: -->
-                <input type="text" id="filter-msg" placeholder="Search Payload..." class="glass-input grow">
-                <select id="filter-level" class="glass-select">
-                    <option value="ALL">ALL LEVELS</option>
-                    <option value="WARN">WARN+</option>
-                    <option value="ERROR">ERROR</option>
-                </select>
-            </div>
-
-            <div class="sep"></div>
-
-            <div class="actions">
-                <button id="btn-pause" class="cyber-btn">PAUSE</button>
-                <button id="btn-clear" class="cyber-btn danger">WIPE</button>
-            </div>
+            <div class="v-sep"></div>
+            <input type="text" id="filter-svc" placeholder="Service..." class="t-input">
+            <input type="text" id="filter-msg" placeholder="Search Payload..." class="t-input grow">
+            <select id="filter-level" class="t-select">
+                <option value="ALL">ALL LEVELS</option>
+                <option value="WARN">WARN+</option>
+                <option value="ERROR">ERROR</option>
+            </select>
+            <div class="v-sep"></div>
+            <button id="btn-pause" class="t-btn">PAUSE</button>
+            <button id="btn-clear" class="t-btn danger">WIPE</button>
         </div>
 
-        <!-- MAIN VIEWPORT -->
+        <!-- SIGNAL MATRIX -->
         <main id="viewport">
-            <div id="log-matrix">
+            <div id="matrix-container">
                 <div class="matrix-head">
-                    <div class="h-time">TIME</div>
-                    <div class="h-sev">LVL</div>
-                    <div class="h-svc">SERVICE</div>
-                    <div class="h-evt">EVENT TYPE</div>
-                    <div class="h-msg">DATA PAYLOAD</div>
+                    <div>TIMESTAMP</div>
+                    <div>LEVEL</div>
+                    <div>SERVICE</div>
+                    <div>EVENT TYPE</div>
+                    <div>DATA STREAM</div>
                 </div>
                 <div id="log-scroller">
                     <div id="log-content"></div>
                 </div>
             </div>
 
-            <!-- SLIDE-OVER INSPECTOR -->
+            <!-- ANALYTICS INSPECTOR -->
             <aside id="inspector">
-                <div class="insp-head">
-                    <div class="insp-title">PACKET DIAGNOSTICS</div>
-                    <button id="btn-close-insp" class="close-btn">✕</button>
-                </div>
-                
-                <div class="insp-toolbar">
-                    <button id="btn-lock-trace" class="insp-btn trace-btn">🔒 LOCK STREAM</button>
-                    <button id="btn-copy-json" class="insp-btn">📋 COPY JSON</button>
+                <div class="insp-header">
+                    <span class="insp-title">PACKET DIAGNOSTICS</span>
+                    <button id="btn-close-insp" class="close-x">✕</button>
                 </div>
 
-                <!-- DYNAMIC MEDIA PLAYER (CANVAS BASED) -->
-                <div id="media-player-module" class="media-container" style="display: none;">
-                    <div class="media-header">
+                <div class="insp-quick-actions">
+                    <button id="btn-lock-trace" class="q-btn primary">🔒 LOCK STREAM</button>
+                    <button id="btn-copy-json" class="q-btn">📋 COPY JSON</button>
+                </div>
+
+                <!-- AUDIO RECONSTRUCTION UNIT -->
+                <div id="media-player-module" class="media-unit" style="display:none;">
+                    <div class="mu-head">
                         <span>🎙️ AUDIO RECONSTRUCTION</span>
-                        <span id="rtp-codec-badge" class="codec-tag">G.711</span>
+                        <span id="rtp-codec-badge" class="c-badge">PCMU</span>
                     </div>
-                    
-                    <div class="visualizer-screen">
+                    <div class="mu-viz">
                         <canvas id="audio-viz"></canvas>
                     </div>
-
-                    <div class="media-controls">
-                        <button id="btn-play-stream" class="play-btn">▶ REPLAY BUFFER</button>
-                        <div class="media-meta">
-                            PT: <span id="audio-pt-info">0</span> | <span id="audio-status">BUFFERED</span>
-                        </div>
+                    <div class="mu-controls">
+                        <button id="btn-play-stream" class="play-trigger">▶ REPLAY BUFFER</button>
+                        <div class="mu-meta">PT: <span id="audio-pt-info">0</span> | <span id="audio-status">READY</span></div>
                     </div>
                 </div>
 
-                <div id="insp-body" class="insp-content">
-                    <div class="empty-state">Select a packet to inspect.</div>
+                <div id="insp-body" class="insp-body">
+                    <!-- Detaylar buraya akacak -->
                 </div>
             </aside>
         </main>
-        
-        <!-- STATUS FOOTER -->
+
         <footer>
-            <div id="total-logs-val">0 Events Logged</div>
-            <div>SENTIRIC SOVEREIGN ENGINE v5.0</div>
+            <div id="total-logs-val">0 Events Processed</div>
+            <div class="system-tag">SENTIRIC SOVEREIGN ENGINE v5.1</div>
         </footer>
     </div>
 
