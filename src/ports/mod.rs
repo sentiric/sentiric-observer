@@ -10,6 +10,7 @@ pub trait LogIngestor {
 
 #[async_trait]
 pub trait LogEmitter: Send + Sync {
+    #[allow(dead_code)]
     async fn emit(&self, log: LogRecord) -> Result<()>;
     async fn emit_batch(&self, logs: Vec<LogRecord>) -> Result<()>;
     fn name(&self) -> &'static str;

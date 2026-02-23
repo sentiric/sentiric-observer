@@ -112,7 +112,8 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
 }
 
 // YENİ HANDLER: Sistem ve Konfigürasyon Bilgilerini UI'a Sağlar
-async fn get_system_config(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
+// YENİ (Alt çizgi _ ekliyoruz):
+async fn get_system_config(State(_state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     let version = env!("CARGO_PKG_VERSION");
     let node_name = hostname::get().map(|h| h.to_string_lossy().into_owned()).unwrap_or("unknown".into());
     

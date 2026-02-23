@@ -1,25 +1,18 @@
+// src/core/aggregator.rs
 use crate::core::domain::LogRecord;
 use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
-use tracing::{info, warn};
+use tracing::info; // unused import 'warn' temizlendi
 
-/// Bir çağrının veya işlemin anlık fotoğrafı
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CallSession {
     pub session_id: String,
     pub start_time: String,
-    pub last_update_ts: i64, // Timestamp (karşılaştırma için)
-    pub last_update_str: String, // UI için ISO format
-    pub logs: Vec<LogRecord>,
-    pub status: SessionStatus,
+    pub last_update_ts: i64,
+    pub logs_count: usize, 
+    pub logs: Vec<LogRecord>, 
+    pub status: String, 
     pub anomalies: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum SessionStatus {
-    Active,
-    Completed,
-    Failed,
 }
 
 pub struct Aggregator {
@@ -29,7 +22,6 @@ pub struct Aggregator {
 }
 
 impl Aggregator {
-    /// Config değerlerini alarak başlat
     pub fn new(max_sessions: usize, ttl_seconds: i64) -> Self {
         Self {
             sessions: HashMap::new(),
@@ -38,88 +30,55 @@ impl Aggregator {
         }
     }
 
-    pub fn process(&mut self, log: LogRecord) -> Option<CallSession> {
-        // 1. Correlation ID Belirle
+    pub fn process(&mut self, log: &LogRecord) {
         let session_id = if let Some(tid) = &log.trace_id {
             tid.clone()
-        } else if let Some(cid) = log.attributes.get("sip.call_id").and_then(|v| v.as_str()) {
-            cid.to_string()
         } else {
-            return None; // Orphan log
+            return; 
         };
 
-        // Timestamp parse et (ISO 8601 -> i64)
-        let ts = match chrono::DateTime::parse_from_rfc3339(&log.ts) {
-            Ok(dt) => dt.timestamp(),
-            Err(_) => chrono::Utc::now().timestamp(),
-        };
+        let now_ts = chrono::Utc::now().timestamp();
 
-        // 2. Yeni Session Kontrolü (Limit Aşımı Var mı?)
-        if !self.sessions.contains_key(&session_id) {
-            if self.sessions.len() >= self.max_sessions {
-                // Acil Durum Temizliği: En eski %10'u sil
-                warn!("⚠️ Aggregator Doldu ({}/{})! Acil temizlik yapılıyor.", self.sessions.len(), self.max_sessions);
-                self.force_cleanup();
-                
-                // Hala yer yoksa yeni çağrıyı reddet (Drop)
-                if self.sessions.len() >= self.max_sessions {
-                    return None;
-                }
-            }
-
-            self.sessions.insert(session_id.clone(), CallSession {
-                session_id: session_id.clone(),
+        // Borrow Checker FIX: Entry closure'ı içinde self.sessions'a tekrar erişmeyiz.
+        let session = self.sessions.entry(session_id.clone()).or_insert_with(|| {
+            CallSession {
+                session_id,
                 start_time: log.ts.clone(),
-                last_update_ts: ts,
-                last_update_str: log.ts.clone(),
-                logs: Vec::new(),
-                status: SessionStatus::Active,
+                last_update_ts: now_ts,
+                logs_count: 0,
+                logs: Vec::with_capacity(50), 
+                status: "Active".to_string(),
                 anomalies: Vec::new(),
-            });
-        }
-
-        // 3. Mevcut Session'ı Güncelle
-        if let Some(session) = self.sessions.get_mut(&session_id) {
-            session.last_update_ts = ts;
-            session.last_update_str = log.ts.clone();
-
-            if log.severity == "ERROR" || log.severity == "FATAL" {
-                session.status = SessionStatus::Failed;
-                session.anomalies.push(format!("[{}] {}", log.severity, log.message));
             }
+        });
 
-            // Logu ekle
-            session.logs.push(log);
-            return Some(session.clone());
+        session.last_update_ts = now_ts;
+        session.logs_count += 1;
+        session.logs.push(log.clone()); 
+
+        if log.severity == "ERROR" || log.severity == "FATAL" {
+            session.status = "Failed".to_string();
+            session.anomalies.push(format!("[{}] {}", log.severity, log.message));
+        } else if log.event == "CALL_TERMINATED" || log.event == "BYE" {
+            session.status = "Completed".to_string();
         }
-
-        None
     }
 
-    /// Akıllı Temizlik: Sadece süresi dolanları siler
     pub fn cleanup(&mut self) {
         let now = chrono::Utc::now().timestamp();
         let ttl = self.ttl_seconds;
-        let before_count = self.sessions.len();
+        let before = self.sessions.len();
 
-        // retain: true dönerse tutar, false dönerse siler
-        self.sessions.retain(|_, session| {
-            (now - session.last_update_ts) < ttl
-        });
-
-        let removed = before_count - self.sessions.len();
-        if removed > 0 {
-            info!("🧹 Garbage Collector: {} bitmiş oturum temizlendi. Aktif: {}", removed, self.sessions.len());
+        self.sessions.retain(|_, s| (now - s.last_update_ts) < ttl);
+        
+        if self.sessions.len() > self.max_sessions {
+             let panic_ttl = ttl / 2;
+             self.sessions.retain(|_, s| (now - s.last_update_ts) < panic_ttl);
         }
-    }
 
-    /// Zorunlu Temizlik (Memory Pressure Durumu)
-    fn force_cleanup(&mut self) {
-        // Basit yöntem: Rastgele silmemek için TTL'i yarıya indirip tekrar temizle
-        let temp_ttl = self.ttl_seconds / 2;
-        let now = chrono::Utc::now().timestamp();
-        self.sessions.retain(|_, session| {
-            (now - session.last_update_ts) < temp_ttl
-        });
+        let removed = before - self.sessions.len();
+        if removed > 0 {
+            info!("🧹 GC: {} sessions removed. Active: {}", removed, self.sessions.len());
+        }
     }
 }

@@ -29,7 +29,7 @@ impl ObserverService for GrpcServerState {
             Err(e) => {
                 tracing::warn!("Failed to parse incoming gRPC log: {}", e);
                 // Hatalı formatta log gelirse, boş bir log oluşturup hatayı içine yazalım
-                LogRecord::system_log("WARN", "GRPC_PARSE_ERROR", &e.to_string())
+                LogRecord::new_system("WARN", "GRPC_PARSE_ERROR", &e.to_string())
             }
         };
 

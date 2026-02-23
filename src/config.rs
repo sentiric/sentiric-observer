@@ -7,6 +7,7 @@ pub struct AppConfig {
     pub host: String,
     pub http_port: u16,
     pub grpc_port: u16,
+    #[allow(dead_code)]
     pub metric_port: u16,
     pub docker_socket: String,
 

@@ -44,7 +44,10 @@ export const Store = {
                 if (this.state.status.isPaused) break;
                 
                 const log = payload;
-                log._idx = Date.now() + Math.random(); // Benzersiz ID ata
+                // YENİ: Backend'den ID gelmediyse (fallback) frontend üretsin.
+                if (!log._idx) {
+                    log._idx = Date.now() + Math.random();
+                }
 
                 // Gelen logu direkt sona ekle. Sıralamayı applyFilters yapacak.
                 this.state.rawLogs.push(log);

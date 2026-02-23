@@ -24,22 +24,17 @@ async fn main() -> anyhow::Result<()> {
     // 2. Loglama Başlat
     tracing_subscriber::fmt::init();
     
-    info!("👁️ SENTIRIC OBSERVER v4.5 (Omniscient Mode) Booting...");
+    info!("👁️ SENTIRIC PANOPTICON v5.0 (Sovereign Edition) Başlatılıyor...");
     info!("🚀 Environment: {}", cfg.env);
-    info!("🔧 Bind: {}:{}", cfg.host, cfg.http_port); 
-    info!("🔧 Metric Port: {} (Reserved for Prometheus)", cfg.metric_port);
+    
+    // [TUNING]: Channel kapasitesini 50.000'e çıkardık. 
+    // Yüksek trafikli sunucularda (media-service) veri kaybını önler.
+    let (ingest_tx, mut ingest_rx) = mpsc::channel::<LogRecord>(50000);
+    let (ui_tx, _) = broadcast::channel::<LogRecord>(50000);
 
-    // KANALLAR
-    // ingest_tx: Docker/Sniffer -> Aggregator (MPSC)
-    let (ingest_tx, mut ingest_rx) = mpsc::channel::<LogRecord>(10000);
-    // ui_tx: Aggregator -> WebSocket & Export (Broadcast)
-    let (ui_tx, _) = broadcast::channel::<LogRecord>(10000);
-
-    // STATE: Sniffer Kontrol Bayrağı
     let sniffer_active = Arc::new(AtomicBool::new(cfg.sniffer_enabled));
 
-    // --- 3. AGGREGATOR TASK (Core Logic) ---
-    // ui_tx'in bir kopyasını alıyoruz
+    // --- 3. AGGREGATOR TASK ---
     let aggregator_ui_tx = ui_tx.clone();
     let max_sessions = cfg.max_active_sessions;
     let ttl_seconds = cfg.session_ttl_seconds;
@@ -47,17 +42,26 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(async move {
         let mut aggregator = Aggregator::new(max_sessions, ttl_seconds);
         let mut cleanup_interval = tokio::time::interval(tokio::time::Duration::from_secs(10));
+        
         loop {
             tokio::select! {
                 Some(mut log) = ingest_rx.recv() => {
-                    // Trace ID Injection Logic
+                    // Indexing (Frontend Sorting için)
+
+                    // YENİ (rand kullanmadan saniyenin milyonda biri hassasiyetiyle uniq id üretir):
+                    log._idx = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_micros() as f64 / 1000.0;
+                    
+                    // Trace ID Injection
                     if log.trace_id.is_none() {
                         if let Some(call_id_val) = log.attributes.get("sip.call_id") {
                              if let Some(s) = call_id_val.as_str() { log.trace_id = Some(s.to_string()); }
                         }
                     }
-                    let _ = aggregator.process(log.clone());
-                    // İşlenen logu UI ve Export kanallarına yayınla
+
+                    // [OPTIMIZATION]: Aggregator artık değer döndürmüyor, sadece state güncelliyor.
+                    aggregator.process(&log);
+                    
+                    // İşlenen logu UI'a bas
                     let _ = aggregator_ui_tx.send(log);
                 }
                 _ = cleanup_interval.tick() => { aggregator.cleanup(); }
@@ -65,12 +69,11 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
-    // Node Name
     let node_name = hostname::get().map(|h| h.to_string_lossy().into_owned()).unwrap_or("unknown".into());
 
     // --- 4. INGESTION ADAPTERS ---
 
-    // A. Sniffer (Linux/Mac Only)
+    // A. Sniffer
     let sniffer_tx = ingest_tx.clone();
     let sniffer_flag = sniffer_active.clone();
     let interface = cfg.sniffer_interface.clone();
@@ -81,7 +84,7 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(async move {
         let sniffer = adapters::sniffer::NetworkSniffer::new(&interface, &filter, sniffer_tx, sniffer_node, sniffer_flag);
         if let Err(e) = sniffer.start().await {
-            error!("Sniffer init failed: {}", e);
+            error!("Sniffer Başlatılamadı: {}", e);
         }
     });
 
@@ -95,7 +98,7 @@ async fn main() -> anyhow::Result<()> {
         }
     });
     
-    // C. gRPC Ingest Server (Port 11071)
+    // C. gRPC
     let grpc_tx = ingest_tx.clone();
     let grpc_addr = SocketAddr::from(([0, 0, 0, 0], cfg.grpc_port));
     tokio::spawn(async move {
@@ -108,48 +111,30 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
-    // --- 5. OMNISCIENT LINK (Upstream Export) ---
-    // Bu kısım Agent modunda çalışırken logları Master'a yollar.
+    // --- 5. UPSTREAM EXPORT ---
     let upstream_url = std::env::var("UPSTREAM_OBSERVER_URL").unwrap_or_default();
-    
     if !upstream_url.is_empty() {
-        info!("🚀 OMNISCIENT MODE: Activating Upstream Link -> {}", upstream_url);
-        
-        // Export Manager
-        let mut export_manager = adapters::exporter::ExportManager::new(50, 2); // 50 log veya 2sn
-        // gRPC Emitter
+        info!("🚀 OMNISCIENT MODE: Upstream -> {}", upstream_url);
+        let mut export_manager = adapters::exporter::ExportManager::new(50, 2);
         export_manager.register_emitter(Arc::new(adapters::grpc_client::GrpcEmitter::new(upstream_url)));
         
-        // Broadcast kanalına abone ol (UI ile aynı veriyi alır)
-        // [DÜZELTME]: ui_tx.subscribe() yerine ui_tx.clone().subscribe() değil, 
-        // direkt ui_tx üzerinden subscribe alabiliriz ama sonra ui_tx move olacaksa clone şart.
-        // Aşağıda ui_tx'i AppState'e veriyoruz, o yüzden burada subscribe alıp devam edebiliriz 
-        // çünkü subscribe() &self alır, sahiplik almaz.
-        // ANCAK AppState move edeceği için, AppState'e clone verelim.
-        
         let mut rx_export = ui_tx.subscribe();
-        let (bridge_tx, bridge_rx) = mpsc::channel(2000);
+        let (bridge_tx, bridge_rx) = mpsc::channel(20000); // Export kanalı da genişletildi
         
         tokio::spawn(async move {
             while let Ok(log) = rx_export.recv().await {
-                // Loop Prevention: Eğer bu log zaten gRPC'den geldiyse, tekrar geri yollama!
                 if let Some(src) = log.attributes.get("source") {
                     if src.as_str() == Some("grpc") { continue; }
                 }
-                
-                // MPSC kanalına kopyala
                 let _ = bridge_tx.send(log).await;
             }
         });
-        
         export_manager.start(bridge_rx);
     }
 
-    // --- 6. API & UI SERVER ---
-    // [DÜZELTME]: ui_tx burada move oluyor. Yukarıda subscribe() çağırdığımız için sorun yok.
-    // Ancak temizlik adına clone kullanabiliriz.
+    // --- 6. API & UI ---
     let app_state = Arc::new(api::routes::AppState { 
-        tx: ui_tx, // Sahiplik buraya geçti
+        tx: ui_tx, 
         sniffer_active, 
         config: cfg.clone() 
     });
@@ -157,7 +142,7 @@ async fn main() -> anyhow::Result<()> {
     let app = api::routes::create_router(app_state);
     let http_addr = SocketAddr::from(([0, 0, 0, 0], cfg.http_port));
     
-    // HTTP Sunucusu
+    info!("✅ Sistem Hazır. UI: http://{}:{}", cfg.host, cfg.http_port);
     let listener = tokio::net::TcpListener::bind(http_addr).await?;
     axum::serve(listener, app).await?;
 
