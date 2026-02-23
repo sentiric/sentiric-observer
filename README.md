@@ -1,25 +1,49 @@
-# 👁️ SENTIRIC OBSERVER (v4.0 Sovereign Edition)
+# 👁️ SENTIRIC PANOPTICON (v12.0)
 
-[![Status](https://img.shields.io/badge/status-active-success.svg)]()
-[![Standard](https://img.shields.io/badge/standard-SUTS_v4.0-blue.svg)](docs/01_SENTIRIC_TELEMETRY_STANDARD_SUTS_v4.md)
-[![Architecture](https://img.shields.io/badge/arch-Hexagonal-purple.svg)](docs/03_OBSERVER_ARCHITECTURE_BLUEPRINT_v4.md)
-[![License](https://img.shields.io/badge/license-MIT-green.svg)]()
+[![Status](https://img.shields.io/badge/status-production_ready-neon_green.svg)]()
+[![Edition](https://img.shields.io/badge/edition-SOVEREIGN_BLACK_BOX-blueviolet.svg)]()
+[![Architecture](https://img.shields.io/badge/arch-Hexagonal_Rust-orange.svg)]()
 
-> **"Data is the new oil, but Intelligence is the engine."**
+> **"Görmediğinizi Yönetemezsiniz. Kanıtlayamadığınızı Çözemezsiniz."**
 
-**Sentiric Observer**, dağıtık mikroservis mimarileri (Rust, Go, Python, Node.js) için tasarlanmış, **OpenTelemetry (OTel)** uyumlu, gerçek zamanlı bir **Telemetri ve Anomali Tespit Platformudur**.
+**Sentiric Panopticon**, dağıtık telekomünikasyon sistemleri için tasarlanmış, **Askeri Sınıf (Military-Grade)** bir Gözlemlenebilirlik ve Adli Tıp (Forensics) platformudur.
 
-Sadece log toplamaz; veriyi **anlar**, **ilişkilendirir** (correlation) ve **görselleştirir**. Özellikle Telekom (SIP/RTP) ve Yüksek Trafikli Edge sistemler için optimize edilmiştir.
+Sıradan log toplayıcıların aksine; uygulama loglarını, ağ paketlerini (PCAP) ve altyapı metriklerini **gerçek zamanlı (Real-Time)** olarak birleştirir ve tek bir "Hakikat Kaynağı" (Source of Truth) sunar.
 
 ---
 
-## 🚀 Temel Yetenekler (Key Capabilities)
+## 💎 Temel Yetenekler (Core Capabilities)
 
-*   **Carrier-Grade Governance:** Tüm servisler için zorunlu [SUTS v4.0 Standardı](docs/01_SENTIRIC_TELEMETRY_STANDARD_SUTS_v4.md) ile veri bütünlüğü sağlar.
-*   **Polyglot Ingestion:** Docker Container'ları, gRPC streamleri ve Ağ Paketlerini (Sniffer) aynı anda işler.
-*   **Real-time Intelligence:** Logları bir veritabanına gömüp sonra sorgulamak yerine, **hafızada (In-Memory)** analiz eder ve anlık anomali tespiti yapar.
-*   **Hexagonal Architecture:** İş mantığı (Core), dış dünyadan (Adapters) tamamen izole edilmiştir.
-*   **Zero-Overhead UI:** WebSocket üzerinden çalışan, binlerce logu saniyeler içinde çizebilen "Matrix Style" arayüz.
+### 1. 🛰️ Tactical Wire Interceptor (Ağ İstihbaratı)
+Ağ kartını (NIC) dinleyen gömülü bir **Sniffer** motoruna sahiptir. UI üzerinden tek bir anahtarla açılıp kapatılabilir.
+*   **SIP Capture:** Sinyalleşme trafiğini anlık yakalar.
+*   **RTP Analysis:** Ses paketlerinin akışını, Jitter ve Packet Loss değerlerini donanım seviyesinde ölçer.
+
+### 2. 🔍 Trace Locking & Isolation (Moleküler İzleme)
+Saniyede binlerce log aksa bile, tek bir `Call-ID`'ye tıklayarak sistemi **kilitler**. Gürültüyü tamamen siler ve sadece o çağrının yaşam döngüsünü gösterir.
+
+### 3. 🧬 Causality Timeline (Nedensellik Zaman Çizelgesi)
+Bir çağrının doğumundan ölümüne kadar geçen süreci (SIP -> Auth -> Routing -> Media -> Billing) milisaniye hassasiyetinde görsel bir film şeridine dönüştürür. Hatanın hangi mikrosaniyede ve hangi serviste oluştuğunu ispatlar.
+
+### 4. 📦 Forensic Export Engine (Adli Raporlama)
+İki farklı modda veri dışa aktarımı sağlar:
+*   **Raw Evidence (.json):** Mahkeme veya teknik analiz için ham veri dökümü.
+*   **AI Context Report (.md):** LLM'ler (Claude/GPT) için optimize edilmiş, olay örgüsünü anlatan akıllı rapor.
+
+---
+
+## 🖥️ Arayüz Mimarisi (The Cockpit)
+
+Sistem, verimlilik için **3 Panelli IDE** düzeninde çalışır:
+
+| Panel | Görev |
+| :--- | :--- |
+| **SOL (Trace Explorer)** | Aktif çağrıları ve işlemleri listeler. Yeni bir çağrı geldiğinde otomatik güncellenir. |
+| **ORTA (Matrix)** | Akan verinin (Loglar + Paketler) canlı matrisidir. Akıllı Scroll ve Renkli Etiketleme içerir. |
+| **SAĞ (Inspector)** | Derin analiz. Ham Payload, JSON detayları, RTP Grafikleri ve Timeline burada bulunur. |
+
+---
+
 
 ---
 
@@ -33,6 +57,7 @@ Bu proje rastgele kodlanmamıştır. Aşağıdaki standartlara sıkı sıkıya b
 | 🏗️ **[Mimari Blueprint](docs/03_OBSERVER_ARCHITECTURE_BLUEPRINT_v4.md)** | Sistemin Hexagonal yapısı, Actor Modeli ve Veri Akışı. |
 | 🛠️ **[Implementation Guide](docs/02_LANGUAGE_IMPLEMENTATION_GUIDE_v1.md)** | Rust, Go, Python ve Node.js için entegrasyon rehberi. |
 | 🗺️ **[Yol Haritası](docs/04_PROJECT_EXECUTION_ROADMAP.md)** | Faz faz geliştirme planı ve hedefler. |
+| 🗺️ **[Policy](docs/05_PLATFORM_GOVERNANCE_AND_EVOLUTION_POLICY)** | Kuralları tanımlar. |
 
 ---
 
