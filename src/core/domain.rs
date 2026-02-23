@@ -63,6 +63,8 @@ fn validate_severity(severity: &str) -> Result<(), validator::ValidationError> {
 }
 
 impl LogRecord {
+    // Gelecekte sistem kendi loglarını UI'a basmak için kullanacak (Donduruldu)
+    #[allow(dead_code)] 
     pub fn system_log(level: &str, event: &str, msg: &str) -> Self {
         let mut attrs = HashMap::new();
         attrs.insert("source".to_string(), Value::String("internal".to_string()));
