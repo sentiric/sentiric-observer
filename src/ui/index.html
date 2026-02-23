@@ -2,88 +2,102 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>SENTIRIC | PANOPTICON [SOVEREIGN]</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>👁️</text></svg>">
+    <title>SENTIRIC | PANOPTICON</title>
     <link rel="stylesheet" href="/ui/css/theme.css">
     <link rel="stylesheet" href="/ui/css/layout.css">
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@400;600&display=swap" rel="stylesheet">
 </head>
 <body>
     <div id="app">
-        <!-- HEADER: Brand & Global Status -->
+        <!-- HEADER -->
         <header>
             <div class="brand">
-                <span style="font-size:18px;">👁️</span> SENTIRIC OBSERVER <span class="live-badge">LIVE</span>
-            </div>
-            
-            <!-- ORTA ALAN: SNIFFER KONTROL -->
-            <div style="display: flex; align-items: center; gap: 10px;">
-                <span style="font-size: 10px; color: #8b949e;">NETWORK SNIFFER:</span>
-                <label class="switch">
-                    <input type="checkbox" id="sniffer-toggle">
-                    <span class="slider round"></span>
-                </label>
-                <span id="sniffer-status" style="font-size: 10px; font-weight: bold; color: #555;">OFF</span>
+                <span style="font-size:20px;">👁️</span> 
+                <div style="display:flex; flex-direction:column; line-height:1;">
+                    <span style="font-weight:800; font-size:14px; letter-spacing:1px;">SENTIRIC</span>
+                    <span style="font-size:9px; color:var(--text-muted); letter-spacing:2px;">OBSERVER v4.1</span>
+                </div>
             </div>
 
-            <div style="display:flex; gap:20px; font-size:11px; color:#8b949e;">
-                <span>BUFFER: <b id="buffer-usage" style="color:#fff">0%</b></span>
-                <span>INGEST: <b id="pps-val" style="color:#fff">0</b> PPS</span>
+            <!-- TACTICAL CENTER -->
+            <div class="tactical-panel">
+                <!-- SNIFFER TOGGLE -->
+                <div class="control-group">
+                    <span class="label">NET INTERCEPT</span>
+                    <label class="switch">
+                        <input type="checkbox" id="sniffer-toggle">
+                        <span class="slider"></span>
+                    </label>
+                    <span id="sniffer-status" class="status-text">STANDBY</span>
+                </div>
+                
+                <div class="divider"></div>
+
+                <!-- CONNECTION STATUS -->
+                <div class="control-group">
+                    <span class="label">UPLINK</span>
+                    <span id="ws-status" class="status-indicator disconnected">●</span>
+                </div>
+            </div>
+
+            <!-- METRICS -->
+            <div class="metrics-panel">
+                <div class="metric">
+                    <span class="val" id="pps-val">0</span>
+                    <span class="lbl">PPS</span>
+                </div>
+                <div class="metric">
+                    <span class="val" id="total-logs-val">0</span>
+                    <span class="lbl">LOGS</span>
+                </div>
+                 <div class="metric">
+                    <span class="val" id="buffer-usage">0%</span>
+                    <span class="lbl">BUFFER</span>
+                </div>
             </div>
         </header>
 
-        <!-- DASHBOARD: Filters & Visualizer -->
+        <!-- DASHBOARD BAR -->
         <section id="dashboard-controls">
-            <!-- Mini Visualizer Canvas -->
-            <canvas id="pulse-chart" style="width:100px; height:30px; opacity:0.7;"></canvas>
+            <!-- OSCILLOSCOPE (VISUALIZER) -->
+            <canvas id="pulse-chart"></canvas>
             
-            <div style="width: 1px; height: 20px; background: #30363d; margin: 0 10px;"></div>
-
-            <!-- Filters -->
-            <input type="text" id="filter-svc" class="modern-input" placeholder="Filter Service..." style="width: 120px;">
-            <input type="text" id="filter-trace" class="modern-input" placeholder="Trace / Call ID" style="width: 140px;">
-            <select id="filter-level" class="modern-input">
-                <option value="ALL">ALL LEVELS</option>
-                <option value="WARN">WARN+</option>
-                <option value="ERROR">ERROR</option>
-            </select>
-            <input type="text" id="filter-msg" class="modern-input" placeholder="Search Logs (Regex supported)..." style="flex:1;">
+            <div class="filters">
+                <input type="text" id="filter-svc" placeholder="Service..." class="glass-input">
+                <input type="text" id="filter-trace" placeholder="Trace ID / Call ID..." class="glass-input" style="width:160px;">
+                <select id="filter-level" class="glass-input">
+                    <option value="ALL">ALL LEVELS</option>
+                    <option value="WARN">WARN+</option>
+                    <option value="ERROR">ERROR only</option>
+                </select>
+                <input type="text" id="filter-msg" placeholder="Search payload..." class="glass-input" style="flex:1;">
+            </div>
             
-            <button id="btn-pause" class="modern-input" style="cursor:pointer; width:80px; text-align:center;">PAUSE</button>
-            <button id="btn-export" class="modern-input" style="cursor:pointer; color:#79c0ff; border-color:#79c0ff;">EXPORT</button>
+            <div class="actions">
+                <button id="btn-pause" class="glass-btn">PAUSE</button>
+                <button id="btn-clear" class="glass-btn">CLEAR</button>
+            </div>
         </section>
 
-        <!-- MAIN VIEW -->
+        <!-- MAIN CONSOLE -->
         <section id="main-view">
-            <!-- Log Console -->
             <div id="matrix-console">
                 <div id="console-wrapper">
                     <div id="console-content"></div>
                 </div>
             </div>
-
-            <!-- Inspector Panel (Hidden by default) -->
+            
+            <!-- INSPECTOR -->
             <aside id="inspector-panel">
                 <div class="inspector-header">
-                    <span>LOG INSPECTOR</span>
-                    <button id="btn-close-inspector" style="background:none; border:none; color:#fff; cursor:pointer;">✕</button>
+                    <span>PAYLOAD INSPECTOR</span>
+                    <button id="btn-close-inspector">✕</button>
                 </div>
                 <div id="inspector-detail" class="inspector-content">
-                    <div style="text-align:center; color:#8b949e; margin-top:50px;">Select a log line to inspect details.</div>
-                </div>
-                <div style="padding:10px; border-top:1px solid #30363d;">
-                    <button id="btn-copy-llm" class="modern-input" style="width:100%; border-color:#2ea043; color:#2ea043; cursor:pointer;">
-                        🤖 COPY CONTEXT FOR LLM
-                    </button>
+                    <div class="placeholder">Select a log to inspect</div>
                 </div>
             </aside>
         </section>
-
-        <!-- FOOTER -->
-        <footer>
-            <span>STATUS: <span id="ws-status" style="color:#f85149">DISCONNECTED</span></span>
-            <span>SOVEREIGN EDITION v4.0.1</span>
-        </footer>
     </div>
 
     <script src="/ui/js/config.js"></script>
