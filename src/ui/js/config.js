@@ -4,4 +4,4 @@ const CONFIG = {
     ROW_HEIGHT: 26,  // Her satırın px yüksekliği (Virtual Scroll için şart)
     CHART_POINTS: 200
 };
-console.log("⚙️ Panopticon Config Loaded v4.x", CONFIG);
+console.log("⚙️ Panopticon Config Loaded v5.x", CONFIG);
