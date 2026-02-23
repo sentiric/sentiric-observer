@@ -6,10 +6,12 @@ import { CONFIG } from './config.js';
 const UI = {
     el: {},
     renderPending: false,
-    isLeftMenuOpen: true, // Sol menü başlangıç durumu
+    isLeftMenuOpen: true,
+    shouldScroll: true,
+    lastRenderedIdx: -1, // <--- YENİ: En son hangi logu çizdik?
 
     init() {
-        console.log("💠 Sovereign UI Engine Booting...");
+        console.log("💠 Sovereign UI Engine Booting... v4.4.1 (Stabilization)");
         const get = id => document.getElementById(id);
         const getAll = cl => document.querySelectorAll(cl);
         
@@ -18,7 +20,7 @@ const UI = {
             scroller: get('matrix-scroller'),
             traceList: get('trace-list'),
             workspace: get('workspace'),
-            traceLocator: get('trace-locator'), // YENİ
+            traceLocator: get('trace-locator'),
             
             // Metrikler
             pps: get('pps-val'),
@@ -30,7 +32,7 @@ const UI = {
             
             // Kontroller
             inpSearch: get('filter-global'),
-            selLevel: get('filter-level'), // YENİ
+            selLevel: get('filter-level'),
             btnNoise: get('btn-toggle-noise'),
             btnPause: get('btn-pause'),
             btnClear: get('btn-clear'),
@@ -43,28 +45,24 @@ const UI = {
             btnExpRaw: get('btn-export-raw'),
             btnExpAi: get('btn-export-ai'),
             
-            // Sağ Panel (Inspector)
+            // Sağ Panel
             tabBtns: getAll('.tab-btn'),
             tabViews: getAll('.insp-view'),
             inspPlaceholder: get('insp-placeholder'),
             inspContent: get('insp-content'),
-            
             detTs: get('det-ts'),
             detNode: get('det-node'),
             detTrace: get('det-trace'),
             detJson: get('json-viewer'),
-            
             rtpCard: get('rtp-diag'),
             rtpPt: get('rtp-pt'),
             rtpSeq: get('rtp-seq'),
             rtpLen: get('rtp-len'),
-            
             timelineFlow: get('timeline-flow')
         };
 
-        // Sol Menü Katlama Butonunu Enjekte Et (HTML'e dokunmadan Component mantığı)
         this.injectLeftMenuToggle();
-
+        this.injectNodeColumnHeader(); // Tablo başlığına NODE ekle
         this.bindEvents();
         this.checkSnifferState();
         
@@ -105,8 +103,35 @@ const UI = {
         }
     },
 
+    injectNodeColumnHeader() {
+        // Mevcut CSS Grid yapısını bozmamak için JS ile CSS'i de güncelliyoruz.
+        const header = document.querySelector('.matrix-head');
+        if (header) {
+            // Grid Columns: Timestamp | Lvl | Node | Service | Event | Msg
+            header.style.gridTemplateColumns = '85px 55px 120px 140px 185px 1fr';
+            // Mevcut başlıkları temizle ve yenilerini ekle
+            header.innerHTML = `
+                <div class="c-time">TIMESTAMP</div>
+                <div class="c-lvl">LVL</div>
+                <div class="c-node" style="color:#58a6ff">NODE</div>
+                <div class="c-svc">SERVICE</div>
+                <div class="c-evt">EVENT TYPE</div>
+                <div class="c-msg">DATA PAYLOAD / SUMMARY</div>
+            `;
+        }
+        // Satırlar için CSS kuralını da güncellememiz gerek, bunu renderMatrix içinde inline style ile yapacağız.
+    },
+
     bindEvents() {
-        // --- Filtreler ---
+        // --- Auto Scroll Dedektörü ---
+        // Kullanıcı yukarı kaydırırsa otomatik kaydırmayı durdur.
+        this.el.scroller?.addEventListener('scroll', () => {
+            const el = this.el.scroller;
+            // Tolerans payı (10px) ile en altta olup olmadığını kontrol et
+            const isAtBottom = Math.abs(el.scrollHeight - el.scrollTop - el.clientHeight) < 50;
+            this.shouldScroll = isAtBottom;
+        });
+
         this.el.inpSearch?.addEventListener('input', (e) => Store.dispatch('SET_SEARCH', e.target.value));
         
         this.el.selLevel?.addEventListener('change', (e) => {
@@ -119,15 +144,20 @@ const UI = {
             e.target.classList.toggle('active', Store.state.controls.hideRtpNoise);
         });
 
-        // --- Kontroller ---
         this.el.btnPause?.addEventListener('click', (e) => {
             Store.dispatch('TOGGLE_PAUSE');
             e.target.innerText = Store.state.status.isPaused ? "▶ RESUME" : "PAUSE";
             e.target.classList.toggle('danger', Store.state.status.isPaused);
+            // Resume edilince en alta kaydır
+            if(!Store.state.status.isPaused) this.shouldScroll = true;
         });
 
-        this.el.btnClear?.addEventListener('click', () => Store.dispatch('WIPE_DATA'));
-        
+        this.el.btnClear?.addEventListener('click', () => {
+                    Store.dispatch('WIPE_DATA');
+                    this.el.matrix.innerHTML = ''; // DOM'u da temizle
+                    this.lastRenderedIdx = -1; // Sayacı sıfırla
+                });
+                
         this.el.btnUnlock?.addEventListener('click', () => {
             Store.dispatch('UNLOCK_TRACE');
             this.el.btnUnlock.style.display = 'none';
@@ -136,13 +166,14 @@ const UI = {
 
         this.el.btnCloseInsp?.addEventListener('click', () => this.closeInspector());
 
-        // --- Event Delegation (Matris Tıklamaları) ---
         this.el.matrix?.addEventListener('click', (e) => {
             const row = e.target.closest('.log-row');
             if (row) {
                 const idx = parseFloat(row.dataset.idx);
                 Store.dispatch('SELECT_LOG', idx);
                 this.openInspector(idx);
+                // Seçim yapılınca auto-scroll durmalı
+                this.shouldScroll = false; 
             }
         });
 
@@ -155,46 +186,34 @@ const UI = {
             }
         });
 
-        // --- TABS ---
         this.el.tabBtns?.forEach(btn => {
             btn.addEventListener('click', () => {
                 this.el.tabBtns.forEach(b => b.classList.remove('active'));
                 this.el.tabViews.forEach(v => v.classList.remove('active'));
-                
                 btn.classList.add('active');
                 const target = document.getElementById(btn.dataset.tab);
                 if (target) target.classList.add('active');
-                
                 if (btn.dataset.tab === 'view-timeline') this.renderTimeline();
             });
         });
 
-        // --- SNIFFER API ---
         this.el.snifferToggle?.addEventListener('change', (e) => {
             const isActive = e.target.checked;
             const action = isActive ? 'enable' : 'disable';
-            
-            fetch(`/api/sniffer/${action}`, { method: 'POST' })
-                .then(r => r.json())
-                .then(res => {
-                    this.el.snifferStatus.innerText = isActive ? "LIVE" : "STANDBY";
-                    this.el.snifferStatus.className = `pod-val ${isActive ? 'recording' : 'standby'}`;
-                }).catch(() => {});
+            fetch(`/api/sniffer/${action}`, { method: 'POST' }).then(r=>r.json()).then(res=>{
+                this.el.snifferStatus.innerText = isActive ? "LIVE" : "STANDBY";
+                this.el.snifferStatus.className = `pod-val ${isActive ? 'recording' : 'standby'}`;
+            }).catch(()=>{});
         });
 
-        // --- EXPORT DROPDOWN FIX ---
         if (this.el.btnExportMain && this.el.dropdownContent) {
             this.el.btnExportMain.addEventListener('click', (e) => {
                 e.preventDefault();
                 const isBlock = this.el.dropdownContent.style.display === 'block';
                 this.el.dropdownContent.style.display = isBlock ? 'none' : 'block';
             });
-
-            // Ekranda başka yere tıklayınca kapat
             document.addEventListener('click', (e) => {
-                if (!e.target.closest('.dropdown')) {
-                    this.el.dropdownContent.style.display = 'none';
-                }
+                if (!e.target.closest('.dropdown')) this.el.dropdownContent.style.display = 'none';
             });
         }
 
@@ -215,20 +234,14 @@ const UI = {
     },
 
     checkSnifferState() {
-        fetch('/api/sniffer/status')
-            .then(r => r.json())
-            .then(data => {
-                if (this.el.snifferToggle) this.el.snifferToggle.checked = data.active;
-                if (this.el.snifferStatus) {
-                    this.el.snifferStatus.innerText = data.active ? "LIVE" : "STANDBY";
-                    this.el.snifferStatus.className = `pod-val ${data.active ? 'recording' : 'standby'}`;
-                }
-            }).catch(() => {});
+        fetch('/api/sniffer/status').then(r=>r.json()).then(data=>{
+            if(this.el.snifferToggle) this.el.snifferToggle.checked = data.active;
+            if(this.el.snifferStatus) {
+                this.el.snifferStatus.innerText = data.active ? "LIVE" : "STANDBY";
+                this.el.snifferStatus.className = `pod-val ${data.active ? 'recording' : 'standby'}`;
+            }
+        }).catch(()=>{});
     },
-
-    // ==========================================
-    // RENDER FUNCTIONS
-    // ==========================================
 
     render(state) {
         if (this.el.pps) this.el.pps.innerText = state.status.pps;
@@ -237,37 +250,76 @@ const UI = {
             const pct = Math.round((state.rawLogs.length / CONFIG.MAX_LOGS) * 100);
             this.el.buffer.innerText = `${pct}%`;
         }
-
         this.renderMatrix(state);
         this.renderTraces(state);
     },
 
-    renderMatrix(state) {
+renderMatrix(state) {
         if (!this.el.matrix) return;
-        const visibleLogs = state.filteredLogs.slice(-150);
+
+        // 1. Yeni Logları Bul
+        // Sadece daha önce çizmediğimiz, indeksi lastRenderedIdx'ten büyük olanları al.
+        const newLogs = state.filteredLogs.filter(l => l._idx > this.lastRenderedIdx);
         
-        let html = '';
-        for (let i = 0; i < visibleLogs.length; i++) {
-            const l = visibleLogs[i];
+        if (newLogs.length === 0 && state.controls.selectedLogIdx === null) return; // Çizilecek bir şey yok
+
+        // 2. Fragment Oluştur (Performans için)
+        const fragment = document.createDocumentFragment();
+        
+        newLogs.forEach(l => {
+            const div = document.createElement('div');
+            // Stil ve Sınıflar
+            div.className = `log-row ${state.controls.selectedLogIdx === l._idx ? 'selected' : ''}`;
+            div.dataset.idx = l._idx;
+            div.style.gridTemplateColumns = '85px 55px 120px 140px 185px 1fr';
+            
+            // İçerik Hazırla
             const time = l.ts ? l.ts.substring(11, 23) : '--:--';
-            const isSelected = state.controls.selectedLogIdx === l._idx ? 'selected' : '';
             const svcName = l.resource ? l.resource['service.name'] : 'sys';
+            let nodeName = l.resource && l.resource['host.name'] ? l.resource['host.name'] : 'local';
+            if (nodeName.length > 15) nodeName = nodeName.substring(0, 12) + '..';
             
             let sevColor = "#ccc";
             if (l.severity === "ERROR" || l.severity === "FATAL") sevColor = "var(--danger)";
             else if (l.severity === "WARN") sevColor = "var(--warn)";
-            
-            html += `<div class="log-row ${isSelected}" data-idx="${l._idx}">
+
+            div.innerHTML = `
                 <span style="color:#666">${time}</span>
                 <span style="color:${sevColor}; font-weight:bold;">${l.severity}</span>
+                <span style="color:var(--info); font-size:10px;">${nodeName}</span>
                 <span style="color:var(--purple)">${svcName}</span>
                 <span style="color:#fff; font-weight:800;">${l.event}</span>
                 <span style="overflow:hidden; text-overflow:ellipsis; color:#999;">${this.escapeHtml(l.message)}</span>
-            </div>`;
-        }
-        this.el.matrix.innerHTML = html;
+            `;
+            
+            fragment.appendChild(div);
+            this.lastRenderedIdx = l._idx; // Sayacı güncelle
+        });
 
-        if (!state.status.isPaused && !state.controls.selectedLogIdx && this.el.scroller) {
+        // 3. DOM'a Ekle (Append)
+        this.el.matrix.appendChild(fragment);
+
+        // 4. Temizlik (DOM'da 500 satırdan fazla tutma)
+        // Çok fazla satır olursa tarayıcı yavaşlar. En üstten sil.
+        while (this.el.matrix.children.length > 500) {
+            this.el.matrix.removeChild(this.el.matrix.firstChild);
+        }
+
+        // 5. Seçili Satırı Güncelle (Eğer varsa)
+        // (Eski seçimi kaldır, yeniyi seç)
+        const prevSelected = this.el.matrix.querySelector('.log-row.selected');
+        if (prevSelected && prevSelected.dataset.idx != state.controls.selectedLogIdx) {
+            prevSelected.classList.remove('selected');
+        }
+        if (state.controls.selectedLogIdx) {
+            const newSelected = this.el.matrix.querySelector(`.log-row[data-idx="${state.controls.selectedLogIdx}"]`);
+            if (newSelected) newSelected.classList.add('selected');
+        }
+
+        // 6. Auto-Scroll
+        if (!state.status.isPaused && this.shouldScroll && this.el.scroller) {
+            // Force Reflow
+            void this.el.scroller.offsetHeight; 
             this.el.scroller.scrollTop = this.el.scroller.scrollHeight;
         }
     },
@@ -275,13 +327,11 @@ const UI = {
     renderTraces(state) {
         if (!this.el.traceList) return;
         const traces = Array.from(state.activeTraces.entries()).reverse().slice(0, 50);
-            
         let html = '';
         for (let i = 0; i < traces.length; i++) {
             const [tid, data] = traces[i];
             const isActive = state.controls.lockedTraceId === tid ? 'active' : '';
             const time = data.start ? data.start.substring(11, 19) : '--:--';
-            
             html += `<div class="trace-item ${isActive}" data-tid="${tid}">
                 <div class="tid">${tid.substring(0, 24)}...</div>
                 <div class="t-meta"><span>${time}</span><span>${data.count} pkts</span></div>
@@ -296,7 +346,6 @@ const UI = {
         if (!log) return;
 
         this.el.workspace.classList.add('inspector-open');
-        // Sol menü açıksa, sağ panel açıldığında matrisi sıkıştırmamak için grid'i güncelle
         this.el.workspace.style.gridTemplateColumns = this.isLeftMenuOpen 
             ? 'var(--w-left) 1fr var(--w-right)' 
             : '40px 1fr var(--w-right)';
@@ -306,13 +355,9 @@ const UI = {
 
         if (this.el.detTs) this.el.detTs.innerText = log.ts || 'N/A';
         if (this.el.detNode) this.el.detNode.innerText = log.resource ? log.resource['host.name'] : 'N/A';
-        
         const tid = log.trace_id || (log.attributes && log.attributes['sip.call_id']);
         if (this.el.detTrace) this.el.detTrace.innerText = tid || 'No Trace ID attached';
-
-        if (this.el.detJson) {
-            this.el.detJson.innerText = JSON.stringify(log.attributes || {}, null, 2);
-        }
+        if (this.el.detJson) this.el.detJson.innerText = JSON.stringify(log.attributes || {}, null, 2);
 
         const isRtp = log.event === "RTP_PACKET" || (log.smart_tags && log.smart_tags.includes('RTP'));
         if (this.el.rtpCard) {
@@ -323,7 +368,6 @@ const UI = {
                 if (this.el.rtpLen) this.el.rtpLen.innerText = (log.attributes['net.packet_len'] || 0) + 'B';
             }
         }
-
         this.renderTimeline();
     },
 
@@ -337,20 +381,16 @@ const UI = {
 
     renderTimeline() {
         if (!this.el.timelineFlow) return;
-
         const state = Store.state;
         let targetTrace = state.controls.lockedTraceId;
-        
         if (!targetTrace && state.controls.selectedLogIdx !== null) {
             const log = state.rawLogs.find(l => l._idx === state.controls.selectedLogIdx);
             if (log) targetTrace = log.trace_id || (log.attributes && log.attributes['sip.call_id']);
         }
-
         if (!targetTrace) {
             this.el.timelineFlow.innerHTML = '<div class="empty-hint">Lock a trace or select a packet to view causality timeline.</div>';
             return;
         }
-
         const journey = state.rawLogs
             .filter(l => (l.trace_id || (l.attributes && l.attributes['sip.call_id'])) === targetTrace)
             .filter(l => l.event !== "RTP_PACKET") 
@@ -360,17 +400,14 @@ const UI = {
             this.el.timelineFlow.innerHTML = '<div class="empty-hint">No timeline events found.</div>'; 
             return; 
         }
-
         const startTs = new Date(journey[0].ts).getTime();
         let html = '';
-        
         journey.forEach(l => {
             const deltaMs = new Date(l.ts).getTime() - startTs;
             let type = '';
             if (l.smart_tags?.includes('SIP') || l.event.includes('SIP')) type = 'sip';
             else if (l.smart_tags?.includes('RTP') || l.event.includes('MEDIA')) type = 'rtp';
             if (l.severity === 'ERROR' || l.severity === 'FATAL') type = 'error';
-
             html += `<div class="tl-item ${type}">
                 <div class="tl-mark"></div>
                 <div class="tl-content">
@@ -383,7 +420,6 @@ const UI = {
                 </div>
             </div>`;
         });
-
         this.el.timelineFlow.innerHTML = html;
     },
 
@@ -402,7 +438,6 @@ const UI = {
         } else if (type === 'ai') {
             let md = `# SENTIRIC SOVEREIGN AI REPORT\nTrace Target: ${trace || 'GLOBAL'}\nGenerated: ${new Date().toISOString()}\n\n## EVENT TIMELINE\n`;
             const start = new Date(dataToExport[0].ts).getTime();
-            
             dataToExport.forEach(l => {
                 if (l.event === 'RTP_PACKET') return; 
                 const delta = new Date(l.ts).getTime() - start;
@@ -414,8 +449,6 @@ const UI = {
             const blob = new Blob([md], { type: 'text/markdown' });
             this.downloadFile(blob, `ai_context_${trace || 'global'}.md`);
         }
-        
-        // Export menüsünü indirildikten sonra kapat
         if(this.el.dropdownContent) this.el.dropdownContent.style.display = 'none';
     },
 
@@ -430,10 +463,7 @@ const UI = {
 
     escapeHtml(unsafe) {
         if (!unsafe) return "";
-        return unsafe.toString()
-             .replace(/&/g, "&amp;")
-             .replace(/</g, "&lt;")
-             .replace(/>/g, "&gt;");
+        return unsafe.toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     }
 };
 
