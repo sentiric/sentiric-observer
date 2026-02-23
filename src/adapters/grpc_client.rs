@@ -50,24 +50,25 @@ impl GrpcEmitter {
 impl LogEmitter for GrpcEmitter {
     fn name(&self) -> &'static str { "gRPC Upstream" }
 
+    #[allow(dead_code)]
     async fn emit(&self, _log: LogRecord) -> Result<()> { Ok(()) }
 
     async fn emit_batch(&self, logs: Vec<LogRecord>) -> Result<()> {
-        let mut client = match self.connect().await {
-            Ok(c) => c,
-            Err(e) => {
-                error!("❌ Upstream Connection Failed: {}", e);
-                return Err(e.into());
-            }
-        };
+        let mut client = self.connect().await?;
 
         for log in logs {
+            // LogRecord'u tam JSON string'ine çevir
+            let raw_json = match serde_json::to_string(&log) {
+                Ok(json) => json,
+                Err(e) => {
+                    error!("Failed to serialize LogRecord for gRPC: {}", e);
+                    continue; // Bu logu atla, diğerlerine devam et
+                }
+            };
+            
+            // Yeni proto formatına göre isteği oluştur
             let req = tonic::Request::new(IngestLogRequest {
-                service_name: log.resource.service_name,
-                message: log.message,
-                level: log.severity,
-                trace_id: log.trace_id.unwrap_or_default(),
-                node_id: log.resource.host_name.unwrap_or_else(|| "unknown".into()),
+                raw_json_log: raw_json,
             });
 
             if let Err(e) = client.ingest_log(req).await {

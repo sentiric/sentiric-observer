@@ -130,7 +130,12 @@ export const Store = {
     applyFilters() {
         const { globalSearch, hideRtpNoise, lockedTraceId, levelFilter } = this.state.controls;
         
-        this.state.filteredLogs = this.state.rawLogs.filter(log => {
+        let logs_to_process = this.state.rawLogs;
+        
+        // Önce zamana göre sırala ki timeline ve matris tutarlı olsun
+        logs_to_process.sort((a, b) => new Date(a.ts) - new Date(b.ts));
+
+        this.state.filteredLogs = logs_to_process.filter(log => {
             const tid = log.trace_id || (log.attributes && log.attributes['sip.call_id']);
             
             // 1. Trace Kilidi

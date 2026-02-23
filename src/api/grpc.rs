@@ -1,6 +1,6 @@
-use crate::core::domain::{LogRecord, ResourceContext};
+// src/api/grpc.rs
+use crate::core::domain::LogRecord;
 use tonic::{Request, Response, Status};
-use std::collections::HashMap;
 use tokio::sync::mpsc;
 
 // Proto dosyasından üretilen kodları dahil et
@@ -11,7 +11,6 @@ pub mod observer_proto {
 use observer_proto::observer_service_server::ObserverService;
 use observer_proto::{IngestLogRequest, IngestLogResponse};
 
-// gRPC sunucusunun durumu (Logları ana kanala iletmek için sender tutar)
 pub struct GrpcServerState {
     pub tx: mpsc::Sender<LogRecord>,
 }
@@ -24,36 +23,24 @@ impl ObserverService for GrpcServerState {
     ) -> Result<Response<IngestLogResponse>, Status> {
         let req = request.into_inner();
 
-        // Metadata zenginleştirme
-        let mut attributes = HashMap::new();
-        attributes.insert("source".to_string(), serde_json::Value::String("grpc".to_string()));
-
-        // Gelen veriyi SUTS v4.0 formatına çevir
-        let mut log = LogRecord {
-            schema_v: "1.0.0".to_string(),
-            ts: chrono::Utc::now().to_rfc3339(),
-            severity: if req.level.is_empty() { "INFO".to_string() } else { req.level.to_uppercase() },
-            tenant_id: "default".to_string(),
-            resource: ResourceContext {
-                service_name: if req.service_name.is_empty() { "unknown_grpc".to_string() } else { req.service_name },
-                service_version: "unknown".to_string(),
-                service_env: "production".to_string(),
-                host_name: if req.node_id.is_empty() { None } else { Some(req.node_id) },
-            },
-            trace_id: if req.trace_id.is_empty() { None } else { Some(req.trace_id) },
-            span_id: None,
-            event: "GRPC_LOG_INGESTED".to_string(),
-            message: req.message,
-            attributes,
-            smart_tags: vec!["GRPC".to_string()], // <--- EKLENDİ (FIX 4)
+        // Gelen JSON string'ini LogRecord'a parse et
+        let mut log: LogRecord = match serde_json::from_str(&req.raw_json_log) {
+            Ok(rec) => rec,
+            Err(e) => {
+                tracing::warn!("Failed to parse incoming gRPC log: {}", e);
+                // Hatalı formatta log gelirse, boş bir log oluşturup hatayı içine yazalım
+                LogRecord::system_log("WARN", "GRPC_PARSE_ERROR", &e.to_string())
+            }
         };
 
-        // Zeka Katmanını Çalıştır (Temizlik ve Ek Etiketleme)
-        log.sanitize_and_enrich();
+        // Infinite Loop Koruması: Kaynağı "grpc" olarak etiketle
+        log.attributes.insert("source".to_string(), serde_json::Value::String("grpc".to_string()));
+        log.smart_tags.push("GRPC".to_string());
+        log.smart_tags.push("REMOTE".to_string()); // UI'da renklendirme için
 
-        // Aggregator kanalına gönder (Hata olursa logla ama client'a success dön)
+        // Ana kanala gönder
         if let Err(e) = self.tx.send(log).await {
-            tracing::error!("gRPC Ingest Error: Kanal kapalı veya dolu. Hata: {}", e);
+            tracing::error!("gRPC Ingest Error (Channel Closed/Full): {}", e);
         }
 
         Ok(Response::new(IngestLogResponse { success: true }))
