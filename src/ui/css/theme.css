@@ -1,75 +1,131 @@
+/* src/ui/css/theme.css */
 :root {
-    --bg-base: #050505; /* Deep Void */
+    /* Palette */
+    --bg-dark: #050505;
     --bg-panel: #0d1117;
-    --border-color: #30363d;
+    --bg-input: #161b22;
+    --border: #30363d;
+    
     --text-main: #c9d1d9;
     --text-muted: #8b949e;
     
-    /* SUTS v4.0 Severity Colors */
-    --sev-debug: #8b949e;
-    --sev-info: #58a6ff;
-    --sev-warn: #d29922;
-    --sev-error: #f85149;
-    --sev-fatal: #ff7b72;
+    /* Sentiric Identity */
+    --accent: #00ff9d;       /* Cyber Green */
+    --accent-glow: rgba(0, 255, 157, 0.4);
+    --danger: #ff4757;       /* Alert Red */
+    --danger-glow: rgba(255, 71, 87, 0.4);
+    --warning: #ffa502;
+    --info: #3b82f6;
+    --purple: #a855f7;
     
-    /* SIP Protocol Colors (Telekom Standartları) */
-    --sip-invite: #2ea043; /* Green */
-    --sip-bye: #da3633;    /* Red */
-    --sip-200: #1f6feb;    /* Blue */
-    --sip-ack: #8b949e;    /* Grey */
-    --sip-register: #d29922; /* Orange */
-    
-    --font-mono: 'JetBrains Mono', monospace;
+    /* Typography */
+    --font-ui: 'Inter', sans-serif;
+    --font-mono: 'Fira Code', 'JetBrains Mono', monospace;
 }
 
-* { box-sizing: border-box; }
-body { background: var(--bg-base); color: var(--text-main); font-family: 'Inter', sans-serif; margin: 0; overflow: hidden; }
+body { background: var(--bg-dark); color: var(--text-main); }
 
-/* Scrollbar */
-::-webkit-scrollbar { width: 8px; }
-::-webkit-scrollbar-track { background: var(--bg-base); }
-::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: #58a6ff; }
+/* Typography Helpers */
+.title { font-weight: 800; font-size: 14px; color: #fff; }
+.subtitle { font-size: 9px; color: var(--accent); font-family: var(--font-mono); }
+.logo-icon { font-size: 24px; text-shadow: 0 0 10px var(--accent-glow); }
 
-/* Status & Indicators */
-.status-indicator { width: 8px; height: 8px; border-radius: 50%; display: inline-block; vertical-align: middle; margin-right: 5px; }
-.online { background: #2ea043; box-shadow: 0 0 8px #2ea043; }
-.offline { background: var(--sev-error); }
-
-/* Badges */
-.badge { padding: 2px 6px; border-radius: 3px; font-weight: bold; font-size: 10px; font-family: var(--font-mono); text-transform: uppercase; display: inline-block; min-width: 50px; text-align: center; }
-
-/* Log Levels */
-.bg-DEBUG { color: var(--sev-debug); border: 1px solid var(--sev-debug); opacity: 0.7; }
-.bg-INFO  { color: var(--sev-info); border: 1px solid var(--sev-info); }
-.bg-WARN  { color: #0d1117; background: var(--sev-warn); }
-.bg-ERROR { color: #fff; background: var(--sev-error); }
-.bg-FATAL { color: #fff; background: var(--sev-fatal); box-shadow: 0 0 10px var(--sev-fatal); animation: pulse-red 1s infinite; }
-
-/* SIP Methods */
-.sip-INVITE { color: var(--sip-invite); border: 1px solid var(--sip-invite); }
-.sip-BYE { color: var(--sip-bye); border: 1px solid var(--sip-bye); }
-.sip-200 { color: var(--sip-200); border: 1px solid var(--sip-200); }
-.sip-REGISTER { color: var(--sip-register); border: 1px solid var(--sip-register); }
-
-@keyframes pulse-red {
-    0% { box-shadow: 0 0 0 0 rgba(255, 123, 114, 0.7); }
-    70% { box-shadow: 0 0 0 10px rgba(255, 123, 114, 0); }
-    100% { box-shadow: 0 0 0 0 rgba(255, 123, 114, 0); }
+/* Status Badges */
+.status-badge {
+    padding: 4px 8px; border-radius: 4px; font-size: 9px; font-family: var(--font-mono); font-weight: bold;
+    border: 1px solid;
 }
+.status-badge.connected { color: var(--accent); border-color: var(--accent); background: rgba(0,255,157,0.1); box-shadow: 0 0 8px var(--accent-glow); }
+.status-badge.disconnected { color: var(--danger); border-color: var(--danger); background: rgba(255,71,87,0.1); animation: blink 1s infinite; }
 
-/* Visualization Overlay */
-#overlay-stats {
-    position: absolute; top: 10px; right: 20px; 
-    font-family: var(--font-mono); font-size: 10px; color: var(--text-muted);
-    text-align: right; pointer-events: none;
+/* Tactical Sniffer Switch */
+.sniffer-widget {
+    display: flex; align-items: center; gap: 15px;
+    background: rgba(255,0,0,0.05); border: 1px solid var(--danger);
+    padding: 5px 15px; border-radius: 6px;
+    transition: all 0.3s;
 }
-.stat-big { font-size: 14px; color: var(--text-main); font-weight: bold; }
+.sniffer-widget.active {
+    background: rgba(255,71,87,0.1); border-color: var(--danger);
+    box-shadow: 0 0 15px var(--danger-glow), inset 0 0 10px var(--danger-glow);
+}
+.radar-icon { font-size: 18px; }
+.sniffer-widget.active .radar-icon { animation: spin 2s linear infinite; }
+.sniffer-info { display: flex; flex-direction: column; line-height: 1.2; }
+.sniffer-info .lbl { font-size: 8px; color: var(--text-muted); }
+.sniffer-info .val { font-size: 12px; font-weight: 900; font-family: var(--font-mono); }
+.sniffer-info .val.recording { color: var(--danger); animation: blink 1s infinite; }
+.sniffer-info .val.standby { color: var(--text-muted); }
 
-/* Mevcut CSS'in sonuna ekle */
-.switch { position: relative; display: inline-block; width: 34px; height: 18px; }
+/* Metrics */
+.metric-box { display: flex; flex-direction: column; align-items: flex-end; }
+.metric-box .val { font-family: var(--font-mono); font-size: 16px; font-weight: bold; color: #fff; }
+.metric-box .lbl { font-size: 8px; color: var(--text-muted); }
+
+/* Inputs & Buttons */
+.filter-input {
+    background: var(--bg-input); border: 1px solid var(--border); color: #fff;
+    padding: 6px 10px; border-radius: 4px; font-family: var(--font-mono); font-size: 11px;
+    outline: none;
+}
+.filter-input:focus { border-color: var(--info); }
+.action-btn {
+    background: var(--bg-input); border: 1px solid var(--border); color: #fff;
+    padding: 6px 15px; border-radius: 4px; font-size: 10px; font-weight: bold; cursor: pointer; transition: 0.2s;
+}
+.action-btn:hover { background: #21262d; }
+.action-btn.danger:hover { background: var(--danger); border-color: var(--danger); }
+
+/* Badges & Tags */
+.sev-badge { padding: 2px 0; border-radius: 3px; font-size: 9px; font-weight: bold; text-align: center; width: 100%; display: inline-block; }
+.sev-INFO { color: var(--info); background: rgba(59, 130, 246, 0.1); }
+.sev-WARN { color: var(--bg-dark); background: var(--warning); }
+.sev-ERROR { color: #fff; background: var(--danger); box-shadow: 0 0 8px var(--danger-glow); }
+.sev-DEBUG { color: var(--text-muted); border: 1px solid var(--border); }
+
+.tag { font-size: 9px; padding: 1px 5px; border-radius: 10px; border: 1px solid; margin-right: 4px; font-weight: bold; }
+.tag-SIP { color: var(--info); border-color: var(--info); }
+.tag-RTP { color: var(--purple); border-color: var(--purple); }
+.tag-DB { color: var(--warning); border-color: var(--warning); }
+.tag-NET { color: var(--danger); border-color: var(--danger); }
+.tag-DTMF { color: #000; background: var(--warning); border-color: var(--warning); }
+
+/* Inspector Specifics */
+.insp-title { font-weight: 800; font-size: 12px; }
+.close-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 16px; }
+.close-btn:hover { color: #fff; }
+
+.insp-btn { 
+    flex: 1; background: transparent; border: 1px solid var(--border); color: #fff; 
+    padding: 6px; font-size: 10px; cursor: pointer; border-radius: 4px; font-weight: bold;
+}
+.insp-btn:hover { background: rgba(255,255,255,0.05); }
+.trace-btn { border-color: var(--info); color: var(--info); }
+.trace-btn:hover { background: rgba(59, 130, 246, 0.1); }
+
+/* RTP MEDIA MODULE (Future Proof) */
+.media-module {
+    margin: 15px; border: 1px solid var(--purple); border-radius: 6px; background: rgba(168, 85, 247, 0.05);
+    overflow: hidden;
+}
+.media-header { background: rgba(168, 85, 247, 0.1); padding: 5px 10px; font-size: 10px; font-weight: bold; color: var(--purple); border-bottom: 1px solid rgba(168, 85, 247, 0.2); }
+.media-body { padding: 15px; display: flex; flex-direction: column; gap: 10px; }
+.waveform-mock { display: flex; align-items: center; justify-content: center; gap: 2px; height: 30px; }
+.waveform-mock .bar { width: 4px; background: var(--purple); opacity: 0.5; border-radius: 2px; }
+.media-controls { display: flex; justify-content: space-between; align-items: center; }
+.play-btn { background: var(--purple); color: #fff; border: none; padding: 5px 15px; border-radius: 3px; font-size: 10px; font-weight: bold; cursor: not-allowed; opacity: 0.5; }
+.media-info { font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); }
+.media-warning { font-size: 9px; color: var(--warning); text-align: center; font-style: italic; }
+
+/* Switch Toggle (Nuclear Style) */
+.switch { position: relative; display: inline-block; width: 40px; height: 20px; }
 .switch input { opacity: 0; width: 0; height: 0; }
-.slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #30363d; transition: .4s; border-radius: 34px; }
-.slider:before { position: absolute; content: ""; height: 14px; width: 14px; left: 2px; bottom: 2px; background-color: white; transition: .4s; border-radius: 50%; }
-input:checked + .slider { background-color: #2ea043; }
-input:checked + .slider:before { transform: translateX(16px); }
+.slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: var(--border); transition: .4s; border-radius: 20px; }
+.slider:before { position: absolute; content: ""; height: 14px; width: 14px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
+input:checked + .slider { background-color: var(--danger); box-shadow: 0 0 10px var(--danger); }
+input:checked + .slider:before { transform: translateX(20px); }
+
+/* Utility */
+.placeholder { color: var(--text-muted); text-align: center; margin-top: 50px; font-style: italic; }
+@keyframes blink { 50% { opacity: 0.3; } }
+@keyframes spin { 100% { transform: rotate(360deg); } }
