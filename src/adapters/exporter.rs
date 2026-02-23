@@ -6,16 +6,13 @@ use tokio::sync::{mpsc, Mutex};
 use tokio::time::{interval, Duration};
 use tracing::{error, info, debug};
 
-/// Phase 3: Kalıcılık (Persistence) özelliği şimdilik dondurulmuştur.
-/// Otonom ve Ephemeral çalışma hedeflendiği için bu yapı şu an pasiftir.
-#[allow(dead_code)]
+/// Logları batch (yığın) halinde hedeflere gönderen yönetici.
 pub struct ExportManager {
     emitters: Vec<Arc<dyn LogEmitter>>,
     batch_size: usize,
     flush_interval_secs: u64,
 }
 
-#[allow(dead_code)]
 impl ExportManager {
     pub fn new(batch_size: usize, flush_interval_secs: u64) -> Self {
         Self {
@@ -32,7 +29,7 @@ impl ExportManager {
 
     pub fn start(&self, mut rx: mpsc::Receiver<LogRecord>) {
         if self.emitters.is_empty() {
-            info!("⚠️ No export adapters registered. Ephemeral mode active (UI only).");
+            info!("⚠️ Export Manager started with NO emitters (Passive Mode).");
             return;
         }
 
@@ -44,7 +41,7 @@ impl ExportManager {
         let buffer = Arc::new(Mutex::new(Vec::with_capacity(batch_size)));
 
         tokio::spawn(async move {
-            info!("📦 Export Manager worker started. Batch size: {}, Interval: {}s", batch_size, flush_secs);
+            info!("📦 Export Worker Active. Batch: {}, Flush: {}s", batch_size, flush_secs);
             loop {
                 tokio::select! {
                     Some(log) = rx.recv() => {

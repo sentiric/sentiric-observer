@@ -1,4 +1,4 @@
-// src/adapters/mod.rs
 pub mod docker;
 pub mod sniffer;
-pub mod exporter; // EKLENDI
+pub mod exporter;
+pub mod grpc_client; // <--- YENİ
