@@ -22,7 +22,7 @@ const ui = {
     content: document.getElementById('console-content'),
     inspector: document.getElementById('inspector-panel'),
     detailContent: document.getElementById('inspector-detail'),
-    
+
     // Inputs
     inpService: document.getElementById('filter-svc'),
     inpTrace: document.getElementById('filter-trace'),
@@ -32,7 +32,7 @@ const ui = {
     init() {
         // Event Listeners
         const apply = () => { this.processLogs(); this.renderVirtual(); };
-        
+
         this.inpService.addEventListener('input', apply);
         this.inpTrace.addEventListener('input', apply);
         this.inpMsg.addEventListener('input', apply);
@@ -56,15 +56,44 @@ const ui = {
 
         // Render Loop
         requestAnimationFrame(() => this.loop());
-        
+
         // Stats Interval
         setInterval(() => {
             document.getElementById('pps-val').innerText = state.pps;
             document.getElementById('total-logs-val').innerText = state.logs.length;
             document.getElementById('buffer-usage').innerText = Math.round((state.logs.length / CONFIG.MAX_LOGS) * 100) + "%";
-            visualizer.pushData(state.pps); 
+            visualizer.pushData(state.pps);
             state.pps = 0;
         }, 1000);
+
+        // ui.init() içine eklenecek:
+
+        // Sniffer Toggle Logic
+        const snifferToggle = document.getElementById('sniffer-toggle');
+        const snifferStatus = document.getElementById('sniffer-status');
+
+        // 1. Mevcut durumu çek
+        fetch('/api/sniffer/status')
+            .then(res => res.json())
+            .then(data => {
+                snifferToggle.checked = data.active;
+                updateSnifferLabel(data.active);
+            });
+
+        snifferToggle.addEventListener('change', (e) => {
+            const action = e.target.checked ? 'enable' : 'disable';
+            fetch(`/api/sniffer/${action}`, { method: 'POST' })
+                .then(res => res.json())
+                .then(data => {
+                    updateSnifferLabel(e.target.checked);
+                });
+        });
+
+        function updateSnifferLabel(active) {
+            snifferStatus.innerText = active ? "RECORDING" : "STANDBY";
+            snifferStatus.style.color = active ? "#ff7b72" : "#555"; // Kırmızı kayıt ışığı
+            snifferStatus.className = active ? "blink" : "";
+        }
     },
 
     loop() {
@@ -73,7 +102,7 @@ const ui = {
             this.renderVirtual();
             state.newLogs = false;
         }
-        
+
         if (state.autoScroll && !state.isPaused && !state.selectedLog) {
             this.wrapper.scrollTop = this.wrapper.scrollHeight;
         }
@@ -90,7 +119,7 @@ const ui = {
 
         state.filteredLogs = state.logs.filter(log => {
             if (f.service && !log.resource['service.name'].toLowerCase().includes(f.service)) return false;
-            
+
             if (f.trace) {
                 const tid = (log.trace_id || '').toLowerCase();
                 const cid = (log.attributes['sip.call_id'] || '').toLowerCase();
@@ -115,19 +144,19 @@ const ui = {
         const visibleRows = Math.ceil(this.wrapper.clientHeight / rowH);
         const scrollTop = this.wrapper.scrollTop;
         const startIdx = Math.floor(scrollTop / rowH);
-        
+
         const renderStart = Math.max(0, startIdx - 5);
         const renderEnd = Math.min(total, startIdx + visibleRows + 5);
 
         this.content.style.height = `${total * rowH}px`;
-        
+
         let html = '';
         for (let i = renderStart; i < renderEnd; i++) {
             const log = data[i];
             const isSel = state.selectedLog === log;
             html += this.createRow(log, i * rowH, isSel);
         }
-        
+
         // Event Delegation yerine string onclick kullanmıyoruz, 
         // wrapper üzerine listener ekliyoruz (daha performanslı).
         this.content.innerHTML = html;
@@ -138,7 +167,7 @@ const ui = {
         const severity = log.severity || 'INFO';
         const svc = log.resource['service.name'] || 'sys';
         const evt = log.event || 'UNKNOWN';
-        
+
         const host = log.resource['host.name'] || log.resource['net.host.ip'] || 'unknown';
 
         let tagsHtml = '';
@@ -149,7 +178,7 @@ const ui = {
         }
 
         const rowClass = `log-row ${isSelected ? 'selected' : ''} ${severity === 'ERROR' ? 'row-error' : ''}`;
-        
+
         // Data attribute ile indexi sakla
         return `<div class="${rowClass}" style="position:absolute; top:${top}px; width:100%;" data-id="${log.ts}">
             <span class="col-ts">${time}</span>
@@ -169,7 +198,7 @@ const ui = {
         state.isPaused = true; // İnceleme yaparken akışı durdur
         document.getElementById('btn-pause').innerText = "RESUME";
         document.getElementById('btn-pause').style.borderColor = "#f85149";
-        
+
         this.inspector.classList.add('open');
         this.renderVirtual(); // Selection highlight için tekrar çiz
 
@@ -196,7 +225,7 @@ const ui = {
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
         const serviceName = state.filters.service || 'all-services';
         const serverId = state.filteredLogs[0]?.resource?.['host.name'] || 'unknown-host';
-        
+
         const fileName = `logs_${serviceName}_${serverId}_${timestamp}.json`;
 
         const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state.filteredLogs, null, 2));
@@ -204,20 +233,20 @@ const ui = {
         node.setAttribute("href", dataStr);
         node.setAttribute("download", fileName);
         //
-            document.body.appendChild(node);
-            node.click();
-            node.remove();
+        document.body.appendChild(node);
+        node.click();
+        node.remove();
     },
 
     copyForLLM() {
         // Şu anki görünümdeki tüm logları al
         // Sadece kritik alanları seç (token tasarrufu)
-        const context = state.filteredLogs.map(l => 
+        const context = state.filteredLogs.map(l =>
             `[${l.ts}] ${l.severity} | ${l.resource['service.name']} | ${l.event} | ${l.message} | TRACE:${l.trace_id || 'N/A'}`
         ).join('\n');
 
         const prompt = `Here are the system logs from Sentiric Observer. Analyze the sequence of events and identify the root cause of any errors:\n\n${context}`;
-        
+
         navigator.clipboard.writeText(prompt).then(() => {
             const btn = document.getElementById('btn-copy-llm');
             const original = btn.innerText;
@@ -256,7 +285,7 @@ const ui = {
 
 // Global Helpers for Inspector Buttons
 window.filterByTrace = (tid) => {
-    if(!tid) return;
+    if (!tid) return;
     ui.inpTrace.value = tid;
     ui.inpTrace.dispatchEvent(new Event('input'));
 };
@@ -265,7 +294,7 @@ window.filterBySvc = (svc) => {
     ui.inpService.dispatchEvent(new Event('input'));
 };
 
-const stream = new LogStream(CONFIG.WS_URL, 
+const stream = new LogStream(CONFIG.WS_URL,
     (log) => {
         state.logs.push(log);
         state.pps++;
@@ -293,7 +322,7 @@ document.getElementById('console-content').addEventListener('click', (e) => {
 });
 
 document.addEventListener('DOMContentLoaded', () => {
-    visualizer.init(); 
+    visualizer.init();
     ui.init();
     stream.connect();
 });

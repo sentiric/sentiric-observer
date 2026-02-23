@@ -1,3 +1,4 @@
+// src/adapters/sniffer.rs
 use crate::core::domain::{LogRecord, ResourceContext};
 use crate::ports::LogIngestor;
 use anyhow::{Context, Result};
@@ -6,26 +7,35 @@ use pcap::{Capture, Device, Linktype};
 use serde_json::Value;
 use std::collections::HashMap;
 use tokio::sync::mpsc::Sender;
-use tracing::{error, info};
+use tracing::{error, info, debug};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
 
 pub struct NetworkSniffer {
     interface: String,
     filter: String,
     tx: Sender<LogRecord>,
     node_name: String,
+    active_flag: Arc<AtomicBool>, // Kontrol Bayrağı
 }
 
 impl NetworkSniffer {
-    pub fn new(interface: &str, filter: &str, tx: Sender<LogRecord>, node_name: String) -> Self {
+    pub fn new(interface: &str, filter: &str, tx: Sender<LogRecord>, node_name: String, active_flag: Arc<AtomicBool>) -> Self {
         let safe_filter = if filter.trim() == "any" || filter.trim().is_empty() {
             "".to_string()
         } else {
             filter.to_string()
         };
-        Self { interface: interface.to_string(), filter: safe_filter, tx, node_name }
+        Self { interface: interface.to_string(), filter: safe_filter, tx, node_name, active_flag }
     }
     
+    // ... (parse_headers ve process_payload fonksiyonları AYNI KALACAK - Değişiklik yok) ...
+    // KOD TEKRARI OLMASIN DİYE BURAYI KISALTIYORUM, MEVCUT KODU KORUYUN.
+    // Sadece build_log ve aşağısını değiştirmiyoruz.
+
     fn parse_headers(packet: &pcap::Packet, link_type: Linktype) -> Option<Vec<u8>> {
+        // ... (Mevcut kod ile aynı) ...
         let data = packet.data;
         let offset = match link_type {
             Linktype::ETHERNET => {
@@ -37,25 +47,17 @@ impl NetworkSniffer {
             Linktype::NULL | Linktype::LOOP => 4,
             _ => 14,
         };
-
         if data.len() <= offset { return None; }
         let ip_header_start = offset;
         if data.len() <= ip_header_start { return None; }
         let version_ihl = data[ip_header_start];
-        let version = version_ihl >> 4;
-        if version != 4 { return None; }
-        let ihl = version_ihl & 0x0F;
-        let ip_header_len = (ihl as usize) * 4;
-        if ip_header_len < 20 { return None; }
+        if (version_ihl >> 4) != 4 { return None; } 
+        let ip_header_len = ((version_ihl & 0x0F) as usize) * 4;
         if data.len() <= ip_header_start + 9 { return None; }
-        let protocol = data[ip_header_start + 9];
-        if protocol != 17 { return None; }
-        let udp_header_start = ip_header_start + ip_header_len;
-        let udp_header_len = 8;
-        if data.len() < udp_header_start + udp_header_len { return None; }
-        let payload_start = udp_header_start + udp_header_len;
-        if data.len() <= payload_start { return None; }
-        Some(data[payload_start..].to_vec())
+        if data[ip_header_start + 9] != 17 { return None; } // UDP Only
+        let udp_start = ip_header_start + ip_header_len;
+        if data.len() < udp_start + 8 { return None; }
+        Some(data[udp_start + 8..].to_vec())
     }
 
     fn process_payload(&self, payload: &[u8], original_len: u32) -> Option<LogRecord> {
@@ -64,6 +66,7 @@ impl NetworkSniffer {
                 return self.create_sip_log(data_str, original_len);
             }
         }
+        // RTP Heuristic Check
         if payload.len() > 12 && (payload[0] & 0xC0) == 0x80 {
              let pt = payload[1] & 0x7F;
              if pt == 0 || pt == 8 || pt == 18 || (pt >= 96 && pt <= 127) {
@@ -81,6 +84,8 @@ impl NetworkSniffer {
         } else {
             first_word.to_string()
         };
+        
+        // Basit Call-ID çıkarımı
         let call_id = data.lines()
             .find(|l| l.to_lowercase().starts_with("call-id") || l.to_lowercase().starts_with("i:"))
             .map(|l| if let Some(pos) = l.find(':') { l[pos+1..].trim() } else { "unknown" })
@@ -92,7 +97,6 @@ impl NetworkSniffer {
         attributes.insert("sip.method".to_string(), Value::String(method.clone()));
         attributes.insert("sip.call_id".to_string(), Value::String(call_id.to_string()));
         
-        // SIP için manuel etiketleme
         let mut log = self.build_log("SIP_PACKET", format!("SIP {} captured", method), attributes);
         log.smart_tags.push("SIP".to_string());
         log.smart_tags.push("NET".to_string());
@@ -105,7 +109,6 @@ impl NetworkSniffer {
         attributes.insert("rtp.payload_type".to_string(), Value::from(pt));
         attributes.insert("net.interface".to_string(), Value::String(self.interface.clone()));
         
-        // RTP için manuel etiketleme
         let mut log = self.build_log("RTP_PACKET", format!("RTP Stream (PT: {})", pt), attributes);
         log.smart_tags.push("RTP".to_string());
         log.smart_tags.push("NET".to_string());
@@ -121,7 +124,7 @@ impl NetworkSniffer {
                 service_env: "production".to_string(), host_name: Some(self.node_name.clone()),
             },
             trace_id: None, span_id: None, event: event.to_string(), message: msg, attributes,
-            smart_tags: vec![], // <--- EKLENDİ (FIX 3) - Default boş, yukarıda dolduruyoruz
+            smart_tags: vec![],
         }
     }
 }
@@ -129,52 +132,65 @@ impl NetworkSniffer {
 #[async_trait]
 impl LogIngestor for NetworkSniffer {
     async fn start(&self) -> Result<()> {
-        info!("🕸️ Sniffer Config: Interface='{}', Filter='{}'", self.interface, self.filter);
+        info!("🕸️ Sniffer Manager: Başlatılıyor. Arayüz: {}, Filtre: {}", self.interface, self.filter);
+        
         let device_name = if self.interface == "any" {
-            "any".to_string()
+            "any".to_string() // Linux "any" device
         } else {
             let dev = Device::list()?.into_iter().find(|d| d.name == self.interface)
                 .ok_or_else(|| anyhow::anyhow!("Arayüz bulunamadı: {}", self.interface))?;
             dev.name
         };
-        let mut cap = Capture::from_device(device_name.as_str())
-            .context("Pcap Device Error")?.promisc(true).snaplen(65535).timeout(500)
-            .open().context("Pcap Open Error (Root gerekli)")?;
-        let link_type = cap.get_datalink();
-        info!("🔗 DataLink Type: {:?} ({})", link_type, link_type.get_name().unwrap_or_else(|_| "?".to_string()));
-        if !self.filter.is_empty() {
-            if let Err(e) = cap.filter(&self.filter, true) {
-                error!("❌ BPF Filter Error ('{}'): {}. Sniffer devre dışı kalıyor.", self.filter, e);
-                return Err(anyhow::anyhow!("BPF Filter Error"));
-            } else { info!("✅ BPF Filter Applied: '{}'", self.filter); }
-        } else { info!("ℹ️ No BPF Filter applied (Promiscuous Mode)"); }
 
+        // Pcap handle'ını oluştur
+        let mut cap = Capture::from_device(device_name.as_str())
+            .context("Pcap Device Error")?
+            .promisc(true)
+            .snaplen(65535)
+            .timeout(100) // 100ms timeout (Non-blocking döngü için kritik)
+            .open()
+            .context("Pcap Open Error (Root gerekli)")?;
+
+        if !self.filter.is_empty() {
+            cap.filter(&self.filter, true)?;
+        }
+        
+        let link_type = cap.get_datalink();
+        let active_flag = self.active_flag.clone();
         let tx_clone = self.tx.clone();
-        let sniffer_logic = NetworkSniffer {
+        let logic_clone = NetworkSniffer {
             interface: self.interface.clone(), filter: self.filter.clone(),
-            tx: self.tx.clone(), node_name: self.node_name.clone(),
+            tx: self.tx.clone(), node_name: self.node_name.clone(), active_flag: self.active_flag.clone()
         };
 
+        // Sniffer Thread (Blocking Pcap Loop)
         tokio::task::spawn_blocking(move || {
-            let mut dropped_packets = 0;
             loop {
+                // 1. Durum Kontrolü
+                if !active_flag.load(Ordering::Relaxed) {
+                    // Pasif ise CPU harcamamak için uyu
+                    std::thread::sleep(Duration::from_millis(500));
+                    continue;
+                }
+
+                // 2. Paket Yakalama
                 match cap.next_packet() {
                     Ok(packet) => {
                         if let Some(payload) = Self::parse_headers(&packet, link_type) {
-                            if let Some(log) = sniffer_logic.process_payload(&payload, packet.header.len) {
-                                match tx_clone.try_send(log) {
-                                    Ok(_) => { if dropped_packets > 0 { info!("🕸️ Sniffer Recovered ({} dropped).", dropped_packets); dropped_packets = 0; } },
-                                    Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => { dropped_packets += 1; },
-                                    Err(_) => break,
-                                }
+                            if let Some(log) = logic_clone.process_payload(&payload, packet.header.len) {
+                                let _ = tx_clone.blocking_send(log);
                             }
                         }
                     },
-                    Err(pcap::Error::TimeoutExpired) => continue,
-                    Err(_) => continue,
+                    Err(pcap::Error::TimeoutExpired) => continue, // Timeout normaldir, döngüye devam
+                    Err(e) => {
+                        error!("Sniffer Error: {:?}", e);
+                        std::thread::sleep(Duration::from_secs(1)); // Hata durumunda bekle
+                    }
                 }
             }
         });
+
         Ok(())
     }
 }

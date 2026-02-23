@@ -15,10 +15,20 @@
             <div class="brand">
                 <span style="font-size:18px;">👁️</span> SENTIRIC OBSERVER <span class="live-badge">LIVE</span>
             </div>
+            
+            <!-- ORTA ALAN: SNIFFER KONTROL -->
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 10px; color: #8b949e;">NETWORK SNIFFER:</span>
+                <label class="switch">
+                    <input type="checkbox" id="sniffer-toggle">
+                    <span class="slider round"></span>
+                </label>
+                <span id="sniffer-status" style="font-size: 10px; font-weight: bold; color: #555;">OFF</span>
+            </div>
+
             <div style="display:flex; gap:20px; font-size:11px; color:#8b949e;">
                 <span>BUFFER: <b id="buffer-usage" style="color:#fff">0%</b></span>
                 <span>INGEST: <b id="pps-val" style="color:#fff">0</b> PPS</span>
-                <span>TOTAL: <b id="total-logs-val" style="color:#fff">0</b></span>
             </div>
         </header>
 
