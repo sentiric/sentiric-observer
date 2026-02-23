@@ -12,7 +12,7 @@ use tokio::sync::broadcast;
 use crate::core::domain::LogRecord;
 use serde_json::{json, Value};
 // DÜZELTME: "warn" import'u artık `handle_socket` içinde kullanılıyor.
-use tracing::{info, warn}; 
+use tracing::{info, warn};
 
 const UI_ASSETS_PATH: &str = "src/ui";
 
@@ -27,6 +27,9 @@ pub fn create_router(state: Arc<AppState>) -> Router {
     Router::new()
         // Ana Sayfa (Mission Control UI)
         .route("/", get(index_handler))
+
+        // YENİ: UI'ın config bilgilerini çekeceği endpoint
+        .route("/api/config", get(get_system_config))         
         
         // Gerçek Zamanlı Veri Akışı
         .route("/ws", get(ws_handler))
@@ -106,4 +109,16 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
             }
         }
     }
+}
+
+// YENİ HANDLER: Sistem ve Konfigürasyon Bilgilerini UI'a Sağlar
+async fn get_system_config(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
+    let version = env!("CARGO_PKG_VERSION");
+    let node_name = hostname::get().map(|h| h.to_string_lossy().into_owned()).unwrap_or("unknown".into());
+    
+    Json(json!({
+        "version": version,
+        "node_name": node_name,
+        "is_upstream_enabled": !std::env::var("UPSTREAM_OBSERVER_URL").unwrap_or_default().is_empty(),
+    }))
 }

@@ -44,15 +44,28 @@ export const Store = {
                 if (this.state.status.isPaused) break;
                 
                 const log = payload;
-                log._idx = Date.now() + Math.random(); // Unique ID
+                log._idx = Date.now() + Math.random(); 
+                
+                // --- CHRONOS FIX: SIRALI EKLEME (SORTED INSERT) ---
+                // Yeni logu, timestamp'ine göre doğru yere ekle.
+                // Bu, listenin her zaman sıralı kalmasını garanti eder.
+                const logTime = new Date(log.ts).getTime();
+                const insertIndex = this.state.rawLogs.findIndex(
+                    l => new Date(l.ts).getTime() > logTime
+                );
+
+                if (insertIndex === -1) {
+                    this.state.rawLogs.push(log); // En sona ekle
+                } else {
+                    this.state.rawLogs.splice(insertIndex, 0, log); // Araya ekle
+                }
                 
                 // RAM Koruması (Ring Buffer)
-                if (this.state.rawLogs.length >= (CONFIG?.MAX_LOGS || 10000)) {
+                if (this.state.rawLogs.length > (CONFIG?.MAX_LOGS || 10000)) {
                     this.state.rawLogs.shift();
                 }
-                this.state.rawLogs.push(log);
+
                 this.state.status.pps++;
-                
                 this.extractTrace(log);
                 shouldRender = this.applyFilters();
                 break;
@@ -128,36 +141,24 @@ export const Store = {
     },
 
     applyFilters() {
+        // ARTIK SORT'A GEREK YOK, rawLogs ZATEN SIRALI!
         const { globalSearch, hideRtpNoise, lockedTraceId, levelFilter } = this.state.controls;
         
-        let logs_to_process = this.state.rawLogs;
-        
-        // Önce zamana göre sırala ki timeline ve matris tutarlı olsun
-        logs_to_process.sort((a, b) => new Date(a.ts) - new Date(b.ts));
-
-        this.state.filteredLogs = logs_to_process.filter(log => {
+        this.state.filteredLogs = this.state.rawLogs.filter(log => {
             const tid = log.trace_id || (log.attributes && log.attributes['sip.call_id']);
             
-            // 1. Trace Kilidi
             if (lockedTraceId && tid !== lockedTraceId) return false;
-
-            // 2. Gürültü Filtresi (RTP)
             if (!lockedTraceId && hideRtpNoise && (log.event === "RTP_PACKET" || log.smart_tags?.includes('RTP'))) return false;
-
-            // 3. SEVİYE FİLTRESİ (YENİ)
             if (levelFilter === "WARN" && log.severity !== "WARN" && log.severity !== "ERROR" && log.severity !== "FATAL") return false;
             if (levelFilter === "ERROR" && log.severity !== "ERROR" && log.severity !== "FATAL") return false;
-
-            // 4. Arama
             if (globalSearch) {
                 const searchStr = `${log.event} ${log.message} ${tid || ''}`.toLowerCase();
                 if (!searchStr.includes(globalSearch)) return false;
             }
-
             return true;
         });
 
-        return true; // Render tetiklenmeli
+        return true;
     },
 
     notify() {

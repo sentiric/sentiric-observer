@@ -11,7 +11,7 @@ const UI = {
     lastRenderedIdx: -1, // <--- YENİ: En son hangi logu çizdik?
 
     init() {
-        console.log("💠 Sovereign UI Engine Booting... v4.4.1 (Stabilization)");
+        console.log("💠 Sovereign UI Engine Booting...");
         const get = id => document.getElementById(id);
         const getAll = cl => document.querySelectorAll(cl);
         
@@ -64,6 +64,10 @@ const UI = {
         this.injectLeftMenuToggle();
         this.injectNodeColumnHeader(); // Tablo başlığına NODE ekle
         this.bindEvents();
+
+        // --- DINAMIK CONFIG YÜKLEME ---
+        this.loadSystemConfig();
+
         this.checkSnifferState();
         
         Store.subscribe((state) => {
@@ -79,6 +83,29 @@ const UI = {
         setInterval(() => Store.dispatch('TICK_1S'), 1000);
         this.startNetwork();
     },
+
+    // YENİ FONKSİYON
+    async loadSystemConfig() {
+        try {
+            const response = await fetch('/api/config');
+            const config = await response.json();
+
+            console.log("💠 Sovereign UI Engine Config Loaded:", config);
+            
+            // Versiyonu güncelle
+            const vBadge = document.querySelector('.v-badge');
+            if (vBadge) vBadge.innerText = `v${config.version}`;
+            
+            // Node adını güncelle
+            const nodeNameEl = document.getElementById('node-name');
+            if (nodeNameEl) nodeNameEl.innerText = config.node_name;
+
+            // TODO: Upstream kontrol butonunu da buraya ekleyebiliriz.
+
+        } catch (e) {
+            console.error("Failed to load system config:", e);
+        }
+    },    
 
     injectLeftMenuToggle() {
         if (!this.el.traceLocator) return;
