@@ -44,23 +44,12 @@ export const Store = {
                 if (this.state.status.isPaused) break;
                 
                 const log = payload;
-                log._idx = Date.now() + Math.random(); 
-                
-                // --- CHRONOS FIX: SIRALI EKLEME (SORTED INSERT) ---
-                // Yeni logu, timestamp'ine göre doğru yere ekle.
-                // Bu, listenin her zaman sıralı kalmasını garanti eder.
-                const logTime = new Date(log.ts).getTime();
-                const insertIndex = this.state.rawLogs.findIndex(
-                    l => new Date(l.ts).getTime() > logTime
-                );
+                log._idx = Date.now() + Math.random(); // Benzersiz ID ata
 
-                if (insertIndex === -1) {
-                    this.state.rawLogs.push(log); // En sona ekle
-                } else {
-                    this.state.rawLogs.splice(insertIndex, 0, log); // Araya ekle
-                }
+                // Gelen logu direkt sona ekle. Sıralamayı applyFilters yapacak.
+                this.state.rawLogs.push(log);
                 
-                // RAM Koruması (Ring Buffer)
+                // RAM Koruması (Fazla logları en baştan sil)
                 if (this.state.rawLogs.length > (CONFIG?.MAX_LOGS || 10000)) {
                     this.state.rawLogs.shift();
                 }
@@ -141,7 +130,10 @@ export const Store = {
     },
 
     applyFilters() {
-        // ARTIK SORT'A GEREK YOK, rawLogs ZATEN SIRALI!
+        // --- CHRONOS FIX v2.0: HER SEFERİNDE TAM SIRALAMA ---
+        // Bu, ağ gecikmelerinden kaynaklanan sıralama hatalarını kesin olarak çözer.
+        this.state.rawLogs.sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime());
+        
         const { globalSearch, hideRtpNoise, lockedTraceId, levelFilter } = this.state.controls;
         
         this.state.filteredLogs = this.state.rawLogs.filter(log => {
@@ -149,11 +141,14 @@ export const Store = {
             
             if (lockedTraceId && tid !== lockedTraceId) return false;
             if (!lockedTraceId && hideRtpNoise && (log.event === "RTP_PACKET" || log.smart_tags?.includes('RTP'))) return false;
+            // INFO ???
             if (levelFilter === "WARN" && log.severity !== "WARN" && log.severity !== "ERROR" && log.severity !== "FATAL") return false;
             if (levelFilter === "ERROR" && log.severity !== "ERROR" && log.severity !== "FATAL") return false;
+            
+            // Kapsamlı Arama: Sadece ana alanlar değil, tüm JSON'u stringe çevirip içinde ara.
             if (globalSearch) {
-                const searchStr = `${log.event} ${log.message} ${tid || ''}`.toLowerCase();
-                if (!searchStr.includes(globalSearch)) return false;
+                const searchableString = JSON.stringify(log).toLowerCase();
+                if (!searchableString.includes(globalSearch)) return false;
             }
             return true;
         });

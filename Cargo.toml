@@ -1,6 +1,6 @@
 [package]
 name = "sentiric-observer"
-version = "4.4.5"
+version = "4.4.6"
 edition = "2021"
 authors = ["Sentiric Architecture Team"]
 
