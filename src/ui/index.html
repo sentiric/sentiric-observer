@@ -3,118 +3,122 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SENTIRIC | PANOPTICON KINETIC v5.1</title>
+    <title>SENTIRIC | PANOPTICON FORENSIC</title>
     <link rel="stylesheet" href="/ui/css/theme.css">
     <link rel="stylesheet" href="/ui/css/layout.css">
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@400;600;900&display=swap" rel="stylesheet">
 </head>
 <body>
     <div id="app">
-        <!-- GLOBAL MONITOR HEADER -->
+        <!-- TOP COMMAND BAR -->
         <header>
-            <div class="brand">
-                <span class="logo-pulse">💠</span>
-                <div class="brand-text">
-                    <span class="title">SENTIRIC <span class="highlight">PANOPTICON</span></span>
-                    <span class="subtitle">TACTICAL SIGNAL INTELLIGENCE</span>
+            <div class="header-left">
+                <span class="nexus-icon">💠</span>
+                <div class="title-group">
+                    <h1 class="main-title">PANOPTICON <span class="v-tag">v6.0</span></h1>
+                    <p class="sub-title">SOVEREIGN TELEMETRY NODE</p>
                 </div>
-                <div id="ws-status" class="status-indicator offline">● DISCONNECTED</div>
             </div>
 
-            <div class="command-center">
-                <div class="sniffer-module">
-                    <div class="sniffer-label">
-                        <span>SIGINT INTERCEPT</span>
-                        <span id="sniffer-status-text" class="status-val standby">STANDBY</span>
+            <div class="header-center">
+                <div id="sniffer-control" class="control-pod">
+                    <div class="pod-label">NETWORK SNIFFER</div>
+                    <div class="pod-action">
+                        <span id="sniffer-status" class="status-led standby">STANDBY</span>
+                        <label class="switch-container">
+                            <input type="checkbox" id="sniffer-toggle">
+                            <span class="switch-slider"></span>
+                        </label>
                     </div>
-                    <label class="cyber-switch">
-                        <input type="checkbox" id="sniffer-toggle">
-                        <span class="slider"></span>
-                    </label>
+                </div>
+                <div class="v-divider"></div>
+                <div id="connection-pod" class="control-pod">
+                    <div class="pod-label">UPLINK STATUS</div>
+                    <div id="ws-status" class="status-pill offline">● DISCONNECTED</div>
                 </div>
             </div>
 
-            <div class="metrics-panel">
-                <div class="scope-container">
-                    <canvas id="scope-chart"></canvas>
-                </div>
-                <div class="metric-group">
-                    <div class="m-item"><span id="pps-val">0</span><small>PPS</small></div>
-                    <div class="m-item"><span id="buffer-usage">0%</span><small>BUF</small></div>
+            <div class="header-right">
+                <div class="realtime-metrics">
+                    <div class="met-box"><span id="pps-val">0</span><small>PPS</small></div>
+                    <div class="met-box"><span id="total-logs-val">0</span><small>EVENTS</small></div>
                 </div>
             </div>
         </header>
 
-        <!-- WIRETAP TOOLBAR -->
-        <div id="toolbar">
-            <div class="search-box">
-                <span class="icon">🔍</span>
-                <input type="text" id="filter-trace" placeholder="LOCK TRACE / CALL-ID...">
+        <!-- ANALYTICS TOOLBAR -->
+        <section id="toolbar">
+            <div class="tool-group flex-2">
+                <span class="t-icon">🔍</span>
+                <input type="text" id="filter-trace" placeholder="TRACE LOCK (Enter Call-ID to isolate entire call journey...)" class="t-input focus-input">
             </div>
-            <div class="v-sep"></div>
-            <input type="text" id="filter-svc" placeholder="Service..." class="t-input">
-            <input type="text" id="filter-msg" placeholder="Search Payload..." class="t-input grow">
-            <select id="filter-level" class="t-select">
-                <option value="ALL">ALL LEVELS</option>
-                <option value="WARN">WARN+</option>
-                <option value="ERROR">ERROR</option>
-            </select>
-            <div class="v-sep"></div>
-            <button id="btn-pause" class="t-btn">PAUSE</button>
-            <button id="btn-clear" class="t-btn danger">WIPE</button>
-        </div>
+            <div class="v-divider"></div>
+            <div class="tool-group">
+                <input type="text" id="filter-svc" placeholder="Service filter..." class="t-input">
+            </div>
+            <div class="tool-group flex-1">
+                <input type="text" id="filter-msg" placeholder="Match content..." class="t-input">
+            </div>
+            <div class="tool-group">
+                <select id="filter-level" class="t-select">
+                    <option value="ALL">ALL LEVELS</option>
+                    <option value="WARN">WARN+</option>
+                    <option value="ERROR">ERROR ONLY</option>
+                </select>
+            </div>
+            <div class="v-divider"></div>
+            <div class="tool-group actions">
+                <button id="btn-pause" class="t-btn">PAUSE</button>
+                <button id="btn-export" class="t-btn export">📦 AI EXPORT</button>
+                <button id="btn-clear" class="t-btn danger">WIPE</button>
+            </div>
+        </section>
 
-        <!-- SIGNAL MATRIX -->
+        <!-- DATA MATRIX -->
         <main id="viewport">
-            <div id="matrix-container">
-                <div class="matrix-head">
-                    <div>TIMESTAMP</div>
-                    <div>LEVEL</div>
-                    <div>SERVICE</div>
-                    <div>EVENT TYPE</div>
-                    <div>DATA STREAM</div>
+            <div id="matrix-wrapper">
+                <div class="matrix-header">
+                    <div class="m-time">TIMESTAMP (UTC)</div>
+                    <div class="m-sev">LVL</div>
+                    <div class="m-svc">SERVICE</div>
+                    <div class="m-evt">EVENT</div>
+                    <div class="m-msg">PAYLOAD / WIRE-DATA</div>
                 </div>
-                <div id="log-scroller">
-                    <div id="log-content"></div>
+                <div id="matrix-scroller">
+                    <div id="matrix-content"></div>
                 </div>
             </div>
 
-            <!-- ANALYTICS INSPECTOR -->
+            <!-- FORENSIC INSPECTOR -->
             <aside id="inspector">
                 <div class="insp-header">
-                    <span class="insp-title">PACKET DIAGNOSTICS</span>
-                    <button id="btn-close-insp" class="close-x">✕</button>
+                    <span class="insp-title">FORENSIC ANALYSIS</span>
+                    <button id="btn-close-insp" class="insp-close">✕</button>
                 </div>
 
-                <div class="insp-quick-actions">
-                    <button id="btn-lock-trace" class="q-btn primary">🔒 LOCK STREAM</button>
-                    <button id="btn-copy-json" class="q-btn">📋 COPY JSON</button>
-                </div>
-
-                <!-- AUDIO RECONSTRUCTION UNIT -->
-                <div id="media-player-module" class="media-unit" style="display:none;">
-                    <div class="mu-head">
-                        <span>🎙️ AUDIO RECONSTRUCTION</span>
-                        <span id="rtp-codec-badge" class="c-badge">PCMU</span>
+                <!-- RTP FLOW UNIT (REAL DATA) -->
+                <div id="rtp-unit" class="forensic-unit" style="display:none;">
+                    <div class="unit-label">REAL-TIME RTP FLOW DATA</div>
+                    <div class="rtp-stats-grid">
+                        <div class="rtp-stat"><span>Payload Type</span><b id="rtp-pt">--</b></div>
+                        <div class="rtp-stat"><span>Sequence</span><b id="rtp-seq">--</b></div>
+                        <div class="rtp-stat"><span>Arrival Jitter</span><b id="rtp-jitter">0ms</b></div>
                     </div>
-                    <div class="mu-viz">
-                        <canvas id="audio-viz"></canvas>
+                    <div class="flow-indicator">
+                        <div id="flow-bar" class="bar-fill"></div>
                     </div>
-                    <div class="mu-controls">
-                        <button id="btn-play-stream" class="play-trigger">▶ REPLAY BUFFER</button>
-                        <div class="mu-meta">PT: <span id="audio-pt-info">0</span> | <span id="audio-status">READY</span></div>
-                    </div>
+                    <div class="unit-footer">RTP packets arriving at interface: <span id="rtp-iface">any</span></div>
                 </div>
 
                 <div id="insp-body" class="insp-body">
-                    <!-- Detaylar buraya akacak -->
+                    <!-- JSON dökümü buraya gelir -->
                 </div>
             </aside>
         </main>
 
         <footer>
-            <div id="total-logs-val">0 Events Processed</div>
-            <div class="system-tag">SENTIRIC SOVEREIGN ENGINE v5.1</div>
+            <span>ENVIRONMENT: PRODUCTION</span>
+            <div class="node-tag">NODE: <span id="node-name">gcp-iowa-gw-01</span></div>
         </footer>
     </div>
 
