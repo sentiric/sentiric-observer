@@ -4,158 +4,150 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SENTIRIC | FLIGHT RECORDER</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📼</text></svg>">
     <link rel="stylesheet" href="/ui/css/theme.css">
     <link rel="stylesheet" href="/ui/css/layout.css">
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;800&display=swap" rel="stylesheet">
 </head>
 <body>
     <div id="app">
-        <!-- TOP NAVIGATION & STATUS -->
+        <!-- COMMAND HEADER -->
         <header>
-            <div class="h-group">
-                <div class="brand">
-                    <span class="icon">📼</span>
-                    <span class="text">SENTIRIC <span class="dim">OBSERVER</span></span>
-                </div>
-                <div class="separator"></div>
-                <div class="connection-pod">
-                    <div id="ws-status" class="status-dot offline"></div>
-                    <span id="ws-text">DISCONNECTED</span>
+            <div class="h-section brand-area">
+                <span class="pulse-icon">📼</span>
+                <div class="brand-meta">
+                    <h1 class="sys-title">FLIGHT RECORDER <span class="ver">v7.0</span></h1>
+                    <span class="sys-sub">SOVEREIGN TELEMETRY & FORENSICS</span>
                 </div>
             </div>
 
-            <div class="h-group center">
+            <!-- MISSION CONTROL WIDGETS -->
+            <div class="h-section control-deck">
                 <!-- SNIFFER CONTROLLER -->
-                <div class="control-surface">
-                    <span class="label">NETWORK INTERCEPT</span>
-                    <label class="toggle">
+                <div class="tactical-pod">
+                    <div class="pod-info">
+                        <span class="lbl">NETWORK INTERCEPT</span>
+                        <span id="sniffer-status" class="val standby">STANDBY</span>
+                    </div>
+                    <label class="toggle-switch">
                         <input type="checkbox" id="sniffer-toggle">
-                        <span class="track">
-                            <span class="knob"></span>
-                        </span>
+                        <span class="slider"></span>
                     </label>
-                    <span id="sniffer-status-text" class="status-val">OFF</span>
+                </div>
+                
+                <div class="separator"></div>
+
+                <!-- CONNECTION STATUS -->
+                <div class="tactical-pod compact">
+                    <span class="lbl">UPLINK</span>
+                    <div id="ws-status" class="conn-dot offline"></div>
                 </div>
             </div>
 
-            <div class="h-group right">
-                <div class="stat-pill">
-                    <span class="k">PPS</span>
-                    <span class="v" id="pps-val">0</span>
-                </div>
-                <div class="stat-pill">
-                    <span class="k">BUFFER</span>
-                    <span class="v" id="buffer-usage">0%</span>
-                </div>
+            <div class="h-section metrics-area">
+                <div class="metric"><b id="pps-val">0</b><small>PPS</small></div>
+                <div class="metric"><b id="buffer-val">0%</b><small>BUFFER</small></div>
+                <div class="metric"><b id="total-val">0</b><small>EVENTS</small></div>
             </div>
         </header>
 
-        <!-- FILTER & ACTION BAR -->
+        <!-- INTELLIGENCE TOOLBAR -->
         <nav id="toolbar">
-            <div class="search-container">
-                <span class="s-icon">🔍</span>
-                <input type="text" id="filter-trace" class="search-input" placeholder="Filter by Trace ID / Call-ID...">
+            <div class="filter-primary">
+                <span class="icon">🔍</span>
+                <input type="text" id="filter-trace" placeholder="TRACE LOCK (Call-ID / Trace-ID)...">
             </div>
-            
-            <div class="filters">
-                <input type="text" id="filter-svc" class="input-std" placeholder="Service...">
-                <input type="text" id="filter-msg" class="input-std grow" placeholder="Content grep...">
-                <select id="filter-level" class="select-std">
+
+            <div class="filter-group">
+                <input type="text" id="filter-svc" placeholder="Service..." class="glass-inp small">
+                <input type="text" id="filter-msg" placeholder="Deep Search..." class="glass-inp grow">
+                <select id="filter-level" class="glass-select">
                     <option value="ALL">ALL LEVELS</option>
-                    <option value="WARN">WARN & ERROR</option>
-                    <option value="ERROR">ERROR ONLY</option>
+                    <option value="WARN">WARN+</option>
+                    <option value="ERROR">ERROR</option>
                 </select>
             </div>
 
-            <div class="actions">
-                <button id="btn-pause" class="btn">PAUSE</button>
-                <button id="btn-clear" class="btn">CLEAR</button>
-                <div class="separator"></div>
-                <div class="dropdown">
-                    <button class="btn primary">EXPORT ▾</button>
-                    <div class="dropdown-content">
-                        <a href="#" id="btn-export-raw">📄 Forensic Snapshot (JSON)</a>
-                        <a href="#" id="btn-export-ai">🤖 AI Context (Text)</a>
-                    </div>
-                </div>
+            <!-- NOISE FILTER: RTP'leri gizler/gösterir -->
+            <button id="btn-toggle-noise" class="tool-btn active" title="Hide RTP/Noise">
+                <span class="btn-icon">🔇</span> <span id="noise-text">NOISE: HIDDEN</span>
+            </button>
+
+            <div class="separator"></div>
+
+            <div class="action-group">
+                <button id="btn-pause" class="tool-btn">PAUSE</button>
+                <button id="btn-export" class="tool-btn export">AI EXPORT</button>
+                <button id="btn-clear" class="tool-btn danger">WIPE</button>
             </div>
         </nav>
 
-        <!-- MAIN WORKSPACE -->
+        <!-- MAIN VIEWPORT -->
         <main id="workspace">
-            <!-- LOG LIST -->
-            <div id="log-pane">
-                <div class="grid-header">
-                    <div class="col-ts">TIME</div>
+            <div id="log-matrix">
+                <div class="matrix-head">
+                    <div class="col-ts">TIME (UTC)</div>
                     <div class="col-lvl">LVL</div>
                     <div class="col-svc">SERVICE</div>
                     <div class="col-evt">EVENT</div>
-                    <div class="col-msg">PAYLOAD SUMMARY</div>
+                    <div class="col-msg">PAYLOAD SNAPSHOT</div>
                 </div>
                 <div id="log-scroller">
-                    <div id="log-content">
-                        <!-- Logs injected here -->
-                    </div>
+                    <div id="log-content"></div>
                 </div>
             </div>
 
-            <!-- DETAIL PANE (INSPECTOR) -->
-            <div id="detail-pane">
-                <div class="pane-header">
-                    <span class="pane-title">EVENT DETAILS</span>
-                    <button id="btn-close-detail" class="icon-btn">✕</button>
-                </div>
-                
-                <div class="pane-content">
-                    <div id="empty-state" class="empty-state">
-                        Select a log entry to inspect details.
+            <!-- FORENSIC INSPECTOR & TIMELINE -->
+            <aside id="inspector">
+                <div class="insp-header">
+                    <div class="tab-triggers">
+                        <button class="tab-btn active" data-target="view-details">DETAILS</button>
+                        <button class="tab-btn" data-target="view-timeline">TIMELINE</button>
                     </div>
-                    
-                    <div id="detail-view" style="display:none;">
-                        <!-- Meta Info -->
-                        <div class="meta-grid">
-                            <div class="meta-item">
-                                <span class="k">TIMESTAMP</span>
-                                <span class="v" id="det-ts">-</span>
-                            </div>
-                            <div class="meta-item">
-                                <span class="k">SERVICE</span>
-                                <span class="v" id="det-svc">-</span>
-                            </div>
-                            <div class="meta-item">
-                                <span class="k">TRACE ID</span>
-                                <span class="v trace-link" id="det-trace">-</span>
-                            </div>
-                        </div>
+                    <button id="btn-close-insp" class="close-x">✕</button>
+                </div>
 
-                        <!-- Tabs -->
-                        <div class="tabs">
-                            <button class="tab active" data-tab="tab-formatted">FORMATTED</button>
-                            <button class="tab" data-tab="tab-raw">RAW SOURCE</button>
-                        </div>
-
-                        <!-- Content -->
-                        <div class="tab-content active" id="tab-formatted">
-                            <pre id="json-viewer" class="code-block"></pre>
-                        </div>
-                        <div class="tab-content" id="tab-raw">
-                            <div class="raw-note">Raw SIP/RTP payload captured from wire:</div>
-                            <pre id="raw-payload" class="code-block raw"></pre>
+                <!-- VIEW 1: DETAILS -->
+                <div id="view-details" class="insp-view active">
+                    <!-- RTP FLOW DIAGNOSTICS (Sadece RTP/SIP varsa görünür) -->
+                    <div id="rtp-card" class="data-card" style="display:none;">
+                        <div class="card-head"><span>🌊 RTP STREAM HEALTH</span> <span id="rtp-codec" class="badge">PCMU</span></div>
+                        <div class="card-body">
+                            <div class="stat-grid">
+                                <div><span>PT</span><b id="rtp-pt">0</b></div>
+                                <div><span>SEQ</span><b id="rtp-seq">0</b></div>
+                                <div><span>LEN</span><b id="rtp-len">0B</b></div>
+                            </div>
+                            <!-- Live Flow Bar -->
+                            <div class="flow-meter"><div id="flow-bar"></div></div>
                         </div>
                     </div>
+
+                    <div class="data-card">
+                        <div class="card-head">RAW PAYLOAD</div>
+                        <pre id="raw-payload" class="code-block"></pre>
+                    </div>
+
+                    <div class="data-card">
+                        <div class="card-head">ATTRIBUTES</div>
+                        <pre id="json-viewer" class="code-block"></pre>
+                    </div>
                 </div>
-            </div>
+
+                <!-- VIEW 2: CAUSALITY TIMELINE -->
+                <div id="view-timeline" class="insp-view">
+                    <div class="timeline-container">
+                        <div id="timeline-content" class="timeline-list">
+                            <!-- JS ile doldurulacak -->
+                            <div class="empty-state">Lock a trace to see causality timeline.</div>
+                        </div>
+                    </div>
+                </div>
+            </aside>
         </main>
 
-        <!-- FOOTER -->
         <footer>
-            <div class="f-left">
-                <span id="total-logs-val">0</span> Events Captured
-            </div>
-            <div class="f-right">
-                SENTIRIC FLIGHT RECORDER v6.2
-            </div>
+            <div class="f-item">NODE: <span id="node-name" style="color:#fff">--</span></div>
+            <div class="f-item status-ok">SYSTEM HEALTHY</div>
         </footer>
     </div>
 
