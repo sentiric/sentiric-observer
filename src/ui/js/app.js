@@ -1,9 +1,10 @@
+// src/ui/js/app.js
 import { LogStream } from './websocket.js';
 
 const state = {
     logs: [],
     filtered: [],
-    traces: new Map(), // TraceID -> {start, count, svc}
+    traces: new Map(),
     pps: 0,
     paused: false,
     hideNoise: true,
@@ -19,7 +20,7 @@ const ui = {
         const get = id => document.getElementById(id);
         const getAll = cl => document.querySelectorAll(cl);
 
-        // [SAFE BINDING]
+        // [SAFE BINDING]: JS çökmesini engelleyen seçici
         this.el = {
             // Panels
             workspace: get('workspace'),
@@ -66,11 +67,11 @@ const ui = {
             rawCard: get('raw-card'),
             
             // RTP
-            rtpCard: get('rtp-analyzer'),
+            rtpCard: get('rtp-diag'),
             rtpPt: get('rtp-pt'),
             rtpSeq: get('rtp-seq'),
             rtpLen: get('rtp-len'),
-            rtpFlow: get('flow-bar'),
+            rtpFlow: get('jitter-bar'),
             
             // Tabs
             tabBtns: getAll('.tab-btn'),
@@ -94,23 +95,21 @@ const ui = {
     bindEvents() {
         const apply = () => { this.filter(); this.render(); };
 
+        // [SAFE ACCESS]: Sadece varsa bağla
         if(this.el.inpGlobal) this.el.inpGlobal.oninput = (e) => {
             state.filters.global = e.target.value.toLowerCase();
             apply();
         };
 
-        if(this.el.selLvl) this.el.selLvl.onchange = (e) => { state.filters.level = e.target.value; apply(); };
-
         if(this.el.btnNoise) this.el.btnNoise.onclick = (e) => {
             state.hideNoise = !state.hideNoise;
-            e.target.innerText = state.hideNoise ? "🔇 HIDE RTP NOISE" : "🔊 SHOW RTP NOISE";
-            e.target.classList.toggle('active', state.hideNoise);
+            e.target.innerText = state.hideNoise ? "🔇 NOISE: HIDDEN" : "🔊 NOISE: VISIBLE";
             apply();
         };
 
         if(this.el.btnPause) this.el.btnPause.onclick = (e) => {
             state.paused = !state.paused;
-            e.target.innerText = state.paused ? "▶ RESUME" : "⏸ PAUSE";
+            e.target.innerText = state.paused ? "▶ RESUME" : "PAUSE";
         };
 
         if(this.el.btnClear) this.el.btnClear.onclick = () => {
@@ -157,7 +156,7 @@ const ui = {
         if(this.el.snifferToggle) {
             this.el.snifferToggle.onchange = (e) => {
                 const act = e.target.checked ? 'enable' : 'disable';
-                fetch(`/api/sniffer/${act}`, {method:'POST'}).then(() => this.updateSniffer(e.target.checked));
+                fetch(`/api/sniffer/${act}`, {method:'POST'});
             };
         }
 
@@ -169,8 +168,6 @@ const ui = {
                 btn.classList.add('active');
                 const target = document.getElementById(btn.dataset.tab);
                 if(target) target.classList.add('active');
-                
-                // Timeline'ı oluştur
                 if(btn.dataset.tab === 'view-timeline') this.renderTimeline();
             };
         });
@@ -185,28 +182,17 @@ const ui = {
 
     filter() {
         const query = state.filters.global;
-        const fLevel = state.filters.level;
-        
         state.filtered = state.logs.filter(l => {
-            // Level Filter
-            if (fLevel === 'WARN' && l.severity !== 'WARN' && l.severity !== 'ERROR') return false;
-            if (fLevel === 'ERROR' && l.severity !== 'ERROR') return false;
-
-            // Trace Lock
+            const tid = l.trace_id || (l.attributes && l.attributes['sip.call_id']);
             if(state.lockedTrace) {
-                const tid = (l.trace_id || (l.attributes && l.attributes['sip.call_id']) || '').toLowerCase();
-                if(tid !== state.lockedTrace.toLowerCase()) return false;
+                if(tid !== state.lockedTrace) return false;
             } else {
-                // Noise Filter (Sadece kilitli değilken çalışır)
                 if(state.hideNoise && l.event === "RTP_PACKET") return false;
             }
-
-            // Global Search
             if(query) {
                 const msg = (l.message || '').toLowerCase();
                 const evt = (l.event || '').toLowerCase();
-                const tid = (l.trace_id || '').toLowerCase();
-                if(!msg.includes(query) && !evt.includes(query) && !tid.includes(query)) return false;
+                if(!msg.includes(query) && !evt.includes(query) && !(tid && tid.toLowerCase().includes(query))) return false;
             }
             return true;
         });
@@ -224,14 +210,13 @@ const ui = {
     },
 
     render() {
-        if (!this.el.matrix) return;
-        const data = state.filtered.slice(-300); // UI Performance Limit
-        this.el.matrix.innerHTML = data.map(l => {
-            const time = l.ts.split('T')[1].slice(0, 12);
+        if (!this.el.content) return;
+        const data = state.filtered.slice(-300);
+        this.el.content.innerHTML = data.map(l => {
+            const time = l.ts ? l.ts.split('T')[1].slice(0, 12) : '--:--';
             const sel = state.selectedIdx === l._idx ? 'selected' : '';
             return `<div class="log-row ${sel}" data-idx="${l._idx}">
-                <span style="color:#555">${time}</span>
-                <span class="sev-${l.severity}">${l.severity}</span>
+                <span style="color:#555">${time}</span><span class="sev-${l.severity}">${l.severity}</span>
                 <span style="color:var(--purple)">${l.resource ? l.resource['service.name'] : 'sys'}</span>
                 <span style="color:#fff; font-weight:bold">${l.event}</span>
                 <span style="overflow:hidden; text-overflow:ellipsis; color:#888;">${this.esc(l.message)}</span>
@@ -241,12 +226,12 @@ const ui = {
 
     renderTraces() {
         if(!this.el.traceList) return;
-        const traces = Array.from(state.traces.entries()).reverse().slice(0, 50);
+        const traces = Array.from(state.traces.entries()).reverse().slice(0, 30);
         this.el.traceList.innerHTML = traces.map(([tid, d]) => {
             const active = state.lockedTrace === tid ? 'active' : '';
             return `<div class="trace-item ${active}" data-tid="${tid}">
                 <div class="tid">${tid.substring(0, 24)}...</div>
-                <div class="t-meta"><span>${d.start.split('T')[1].slice(0,8)}</span><span>${d.count} events</span></div>
+                <div class="t-meta"><span>${d.start.split('T')[1].slice(0,8)}</span><span>${d.count} pkts</span></div>
             </div>`;
         }).join('');
     },
@@ -263,7 +248,7 @@ const ui = {
         this.render();
 
         if(this.el.detTs) this.el.detTs.innerText = log.ts;
-        if(this.el.detNode) this.el.detNode.innerText = (log.resource && log.resource['host.name']) || 'N/A';
+        if(this.el.detNode) this.el.detNode.innerText = log.resource['host.name'] || 'N/A';
         const tid = log.trace_id || (log.attributes && log.attributes['sip.call_id']);
         if(this.el.detTrace) this.el.detTrace.innerText = tid || 'N/A';
 
@@ -360,14 +345,11 @@ const ui = {
     checkSniffer() {
         fetch('/api/sniffer/status').then(r=>r.json()).then(d => {
             if(this.el.snifferToggle) this.el.snifferToggle.checked = d.active;
-            this.updateSniffer(d.active);
+            if(this.el.snifferStatus) {
+                this.el.snifferStatus.innerText = d.active ? "LIVE" : "STANDBY";
+                this.el.snifferStatus.className = `status-led ${d.active ? 'recording' : 'standby'}`;
+            }
         }).catch(()=>{});
-    },
-
-    updateSniffer(active) {
-        if(!this.el.snifferStatus) return;
-        this.el.snifferStatus.innerText = active ? "INTERCEPTING" : "STANDBY";
-        this.el.snifferStatus.className = `status-led ${active ? 'recording' : 'standby'}`;
     },
 
     esc(s) { return s ? s.toString().replace(/&/g, "&amp;").replace(/</g, "&lt;") : ""; }
