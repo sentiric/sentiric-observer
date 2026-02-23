@@ -3,144 +3,149 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SENTIRIC | PANOPTICON v8.0</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>👁️</text></svg>">
+    <title>SENTIRIC | PANOPTICON BLACK BOX v10.0</title>
     <link rel="stylesheet" href="/ui/css/theme.css">
     <link rel="stylesheet" href="/ui/css/layout.css">
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Inter:wght@400;600;700;900&display=swap" rel="stylesheet">
 </head>
 <body>
     <div id="app">
-        <!-- GLOBAL HEADER -->
-        <header id="topbar">
-            <div class="header-zone brand-zone">
-                <div class="logo-core">
-                    <span class="logo-icon">👁️</span>
-                    <div class="brand-titles">
-                        <span class="title">PANOPTICON</span>
-                        <span class="subtitle">SOVEREIGN FLIGHT RECORDER</span>
-                    </div>
+        <!-- HEADER: TACTICAL STATUS -->
+        <header id="top-command">
+            <div class="header-segment left">
+                <span class="logo-pulse">💠</span>
+                <div class="brand-group">
+                    <h1 class="sys-name">PANOPTICON <span class="badge-ver">v10.0</span></h1>
+                    <span class="sys-mode">SOVEREIGN FLIGHT RECORDER</span>
                 </div>
-                <div id="ws-status" class="status-pill offline">OFFLINE</div>
             </div>
 
-            <div class="header-zone center-zone">
-                <div class="sniffer-pod">
+            <div class="header-segment center">
+                <div class="sniffer-console">
                     <div class="pod-info">
-                        <span class="pod-lbl">L2/L3 WIRE SNIFFER</span>
-                        <span id="sniffer-status" class="pod-val standby">STANDBY</span>
+                        <span class="pod-label">WIRE INTERCEPTOR</span>
+                        <span id="sniffer-status" class="pod-status standby">STANDBY</span>
                     </div>
-                    <label class="cyber-toggle">
+                    <label class="tactical-toggle">
                         <input type="checkbox" id="sniffer-toggle">
-                        <span class="toggle-track"></span>
+                        <span class="slider"></span>
                     </label>
                 </div>
+                <div class="v-divider"></div>
+                <div id="ws-status" class="status-pill disconnected">● OFFLINE</div>
             </div>
 
-            <div class="header-zone metrics-zone">
-                <div class="metric"><b id="pps-val">0</b><span>PPS</span></div>
-                <div class="metric"><b id="mem-val">0%</b><span>RAM</span></div>
-                <div class="metric"><b id="total-val">0</b><span>EVENTS</span></div>
+            <div class="header-segment right">
+                <div class="live-metrics">
+                    <div class="m-box"><b id="pps-val">0</b><small>PPS</small></div>
+                    <div class="m-box"><b id="buffer-val">0%</b><small>BUFFER</small></div>
+                    <div class="m-box"><b id="total-val">0</b><small>EVENTS</small></div>
+                </div>
             </div>
         </header>
 
-        <!-- IDE WORKSPACE -->
-        <div id="workspace">
+        <!-- MAIN IDE WORKSPACE -->
+        <div id="nexus-workspace">
             
-            <!-- LEFT PANEL: TRACE EXPLORER -->
-            <aside id="left-sidebar">
-                <div class="sidebar-header">
-                    <span>📡 ACTIVE CALLS & TRACES</span>
-                </div>
-                <div class="sidebar-toolbar">
-                    <button id="btn-clear-traces" class="s-btn">CLEAR</button>
-                    <button id="btn-unlock-trace" class="s-btn primary" style="display:none;">🔓 UNLOCK</button>
+            <!-- LEFT PANEL: TRACE LOCATOR -->
+            <aside id="trace-locator">
+                <div class="panel-head">📡 LIVE CALL TRAIL</div>
+                <div class="panel-actions">
+                    <button id="btn-clear-traces" class="p-btn">WIPE ALL</button>
+                    <button id="btn-unlock-trace" class="p-btn primary" style="display:none;">🔓 UNLOCK</button>
                 </div>
                 <div id="trace-list" class="trace-scroller">
-                    <div class="empty-hint">Waiting for calls...</div>
-                    <!-- JS will inject traces here -->
+                    <!-- JS Traces -->
                 </div>
             </aside>
 
-            <!-- CENTER PANEL: MATRIX -->
-            <main id="center-matrix">
+            <!-- CENTER PANEL: EVENT MATRIX -->
+            <main id="event-matrix">
                 <div id="matrix-toolbar">
-                    <div class="search-box">
+                    <div class="search-wrap">
                         <span class="icon">🔍</span>
-                        <input type="text" id="filter-global" placeholder="Search Payload or Trace ID...">
+                        <input type="text" id="filter-global" placeholder="Search Matrix (Payload, Method, Error)...">
                     </div>
-                    <select id="filter-level" class="t-select">
+                    <select id="filter-level" class="m-select">
                         <option value="ALL">ALL LEVELS</option>
-                        <option value="WARN">WARN & ERROR</option>
-                        <option value="ERROR">ERROR ONLY</option>
+                        <option value="WARN">WARN+</option>
+                        <option value="ERROR">ERROR</option>
                     </select>
-                    <button id="btn-toggle-noise" class="t-btn active">🔇 NOISE: HIDDEN</button>
+                    <button id="btn-toggle-noise" class="m-btn active">🔇 HIDE RTP NOISE</button>
                     <div class="spacer"></div>
-                    <button id="btn-pause" class="t-btn">⏸ PAUSE</button>
-                    <button id="btn-export-ai" class="t-btn highlight">🤖 AI EXPORT</button>
+                    <button id="btn-pause" class="m-btn">⏸ PAUSE</button>
+                    <button id="btn-export" class="m-btn forensic">📦 FORENSIC EXPORT</button>
                 </div>
 
-                <div class="matrix-headers">
-                    <div class="c-ts">TIMESTAMP</div>
-                    <div class="c-lvl">LVL</div>
-                    <div class="c-svc">SERVICE</div>
-                    <div class="c-evt">EVENT TYPE</div>
-                    <div class="c-msg">PAYLOAD / SUMMARY</div>
+                <div class="matrix-grid-header">
+                    <div class="mh-time">TIMESTAMP</div>
+                    <div class="mh-lvl">LVL</div>
+                    <div class="mh-svc">SERVICE</div>
+                    <div class="mh-evt">EVENT TYPE</div>
+                    <div class="mh-msg">WIRE DATA SUMMARY</div>
                 </div>
 
                 <div id="matrix-scroller">
-                    <div id="matrix-content">
-                        <!-- JS will inject log rows here -->
-                    </div>
+                    <div id="matrix-content"></div>
                 </div>
             </main>
 
-            <!-- RIGHT PANEL: PACKET INSPECTOR -->
-            <aside id="right-sidebar">
-                <div class="sidebar-header">
-                    <span>🔬 PACKET INSPECTOR</span>
-                    <button id="btn-close-inspector" class="close-btn">✕</button>
+            <!-- RIGHT PANEL: FORENSIC INSPECTOR -->
+            <aside id="forensic-inspector">
+                <div class="panel-head tabbed">
+                    <button class="tab-btn active" data-tab="view-details">PACKET INFO</button>
+                    <button class="tab-btn" data-tab="view-timeline">TIMELINE</button>
+                    <button id="btn-close-inspector" class="close-x">✕</button>
                 </div>
 
-                <div class="inspector-scroll">
-                    <div id="insp-placeholder" class="empty-hint">Click a row in the matrix to inspect.</div>
-                    
-                    <div id="insp-content" style="display: none;">
-                        <div class="insp-meta">
-                            <div class="meta-row"><span class="k">TIME:</span> <span class="v" id="det-ts"></span></div>
-                            <div class="meta-row"><span class="k">NODE:</span> <span class="v" id="det-node"></span></div>
-                            <div class="meta-row"><span class="k">SVC:</span>  <span class="v" id="det-svc"></span></div>
-                            <div class="meta-row"><span class="k">TRACE:</span><span class="v" id="det-trace" style="color:var(--accent);"></span></div>
-                        </div>
+                <!-- VIEW 1: DATA DETAILS -->
+                <div id="view-details" class="sidebar-view active">
+                    <div class="scroller">
+                        <div id="insp-placeholder" class="placeholder-msg">Select a packet to begin analysis.</div>
+                        
+                        <div id="insp-content" style="display:none;">
+                            <div class="meta-card">
+                                <div class="m-row"><span>TIME:</span> <b id="det-ts"></b></div>
+                                <div class="m-row"><span>NODE:</span> <b id="det-node"></b></div>
+                                <div class="m-row"><span>TRACE:</span> <b id="det-trace" style="color:var(--accent)"></b></div>
+                            </div>
 
-                        <!-- RTP ANALYZER -->
-                        <div id="rtp-analyzer" class="analyzer-box" style="display: none;">
-                            <div class="a-title">RTP STREAM METRICS</div>
-                            <div class="a-grid">
-                                <div><small>PAYLOAD TYPE</small><br><b id="rtp-pt"></b></div>
-                                <div><small>SEQUENCE</small><br><b id="rtp-seq"></b></div>
-                                <div><small>PACKET SIZE</small><br><b id="rtp-len"></b></div>
+                            <!-- RTP ANALYZER (ONLY FOR RTP) -->
+                            <div id="rtp-analyzer" class="rtp-card" style="display:none;">
+                                <div class="c-label">RTP FLOW DIAGNOSTICS</div>
+                                <div class="c-grid">
+                                    <div class="c-item"><small>SEQ</small><b id="rtp-seq">--</b></div>
+                                    <div class="c-item"><small>PT</small><b id="rtp-pt">--</b></div>
+                                    <div class="c-item"><small>LEN</small><b id="rtp-len">--</b></div>
+                                </div>
+                                <div class="flow-meter"><div id="flow-bar"></div></div>
+                            </div>
+
+                            <div class="data-block">
+                                <div class="b-label">JSON ATTRIBUTES</div>
+                                <pre id="det-json"></pre>
+                            </div>
+
+                            <div id="raw-card" class="data-block" style="display:none;">
+                                <div class="b-label highlight">RAW WIRE PAYLOAD</div>
+                                <pre id="det-raw"></pre>
                             </div>
                         </div>
+                    </div>
+                </div>
 
-                        <!-- PAYLOAD DATA -->
-                        <div class="data-section">
-                            <div class="section-title">EVENT ATTRIBUTES (JSON)</div>
-                            <pre id="det-json" class="code-block"></pre>
-                        </div>
-
-                        <div id="raw-section" class="data-section" style="display: none;">
-                            <div class="section-title" style="color:var(--info);">RAW WIRE PAYLOAD</div>
-                            <pre id="det-raw" class="code-block raw"></pre>
-                        </div>
+                <!-- VIEW 2: CAUSALITY TIMELINE -->
+                <div id="view-timeline" class="sidebar-view">
+                    <div id="timeline-flow" class="scroller">
+                        <!-- JS Timeline -->
                     </div>
                 </div>
             </aside>
         </div>
 
-        <footer id="footer">
-            <div>SENTIRIC MESH INFRASTRUCTURE</div>
-            <div>STATUS: OPTIMAL</div>
+        <footer id="nexus-footer">
+            <div class="f-left">NODE: <span id="local-node-name">PROD-GW-01</span></div>
+            <div class="f-right">SENTIRIC OMNISCIENT ENGINE v10.0</div>
         </footer>
     </div>
 

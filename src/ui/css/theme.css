@@ -1,61 +1,45 @@
+/* src/ui/css/theme.css */
 :root {
-    --bg-base: #050505;
-    --bg-panel: #0d1117;
-    --border: #30363d;
-    
-    --text-main: #c9d1d9;
-    --text-dim: #8b949e;
-    
-    --accent: #00ff9d;
-    --danger: #f85149;
-    --warn: #d29922;
-    --info: #58a6ff;
-    --purple: #c084fc;
-    
-    --font-main: 'Inter', sans-serif;
-    --font-mono: 'JetBrains Mono', monospace;
+    --accent: #00ff9d; --danger: #f85149; --warn: #d29922; --info: #58a6ff; --purple: #c084fc;
+    --bg-main: #050505; --bg-panel: #0d1117; --bg-toolbar: #161b22; --border: #30363d;
 }
 
-/* STATUS & METRICS */
-.logo-core { display: flex; align-items: center; gap: 10px; }
-.logo-icon { font-size: 24px; text-shadow: 0 0 10px rgba(0,255,157,0.5); }
-.brand-titles { display: flex; flex-direction: column; line-height: 1.2; }
-.title { font-weight: 900; font-size: 16px; color: #fff; letter-spacing: 1px; }
-.subtitle { font-size: 9px; font-family: var(--font-mono); color: var(--accent); }
+/* COMPONENTS */
+.panel-head { padding: 12px 15px; background: #111; border-bottom: 1px solid #333; font-weight: 800; font-size: 11px; letter-spacing: 1px; color: #666; }
+.panel-head.tabbed { display: flex; gap: 10px; padding: 0 10px; }
+.tab-btn { background: none; border: none; color: #555; font-weight: 800; font-size: 10px; cursor: pointer; padding: 15px 5px; border-bottom: 2px solid transparent; }
+.tab-btn.active { color: #fff; border-bottom-color: var(--accent); }
 
-.status-pill { padding: 4px 8px; border-radius: 4px; font-size: 10px; font-family: var(--font-mono); font-weight: bold; border: 1px solid; }
-.status-pill.online { color: var(--accent); background: rgba(0,255,157,0.1); border-color: var(--accent); box-shadow: 0 0 10px rgba(0,255,157,0.2); }
-.status-pill.offline { color: var(--danger); background: rgba(248,81,73,0.1); border-color: var(--danger); }
+.p-btn, .m-btn { background: #21262d; border: 1px solid #30363d; color: #c9d1d9; padding: 5px 12px; border-radius: 4px; font-size: 10px; font-weight: bold; cursor: pointer; }
+.m-btn.forensic { border-color: var(--accent); color: var(--accent); }
+.m-btn.active { background: rgba(210, 153, 34, 0.1); color: var(--warn); border-color: var(--warn); }
 
-.metric { display: flex; flex-direction: column; align-items: flex-end; }
-.metric b { font-family: var(--font-mono); font-size: 16px; color: #fff; line-height: 1; }
-.metric small { font-size: 8px; color: var(--text-dim); }
+/* TRACE ITEMS */
+.trace-item { padding: 10px; border-bottom: 1px solid #1a1a1a; cursor: pointer; transition: 0.2s; }
+.trace-item:hover { background: #1a1a1a; }
+.trace-item.active { background: rgba(0, 255, 157, 0.05); border-left: 2px solid var(--accent); }
+.trace-item .tid { font-family: 'JetBrains Mono'; font-size: 10px; color: var(--accent); font-weight: bold; margin-bottom: 4px; word-break: break-all; }
+.trace-item .t-meta { font-size: 9px; color: #555; display: flex; justify-content: space-between; }
 
-/* SNIFFER SWITCH */
-.sniffer-pod { display: flex; align-items: center; gap: 15px; background: rgba(0,0,0,0.4); border: 1px solid var(--border); padding: 5px 15px; border-radius: 6px; }
-.pod-info { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.2; }
-.pod-lbl { font-size: 8px; color: var(--text-dim); font-weight: bold; }
-.pod-val { font-family: var(--font-mono); font-size: 12px; font-weight: bold; }
-.pod-val.standby { color: #555; }
-.pod-val.recording { color: var(--danger); text-shadow: 0 0 8px var(--danger); animation: blink 1s infinite; }
+/* FORENSIC CARD */
+.data-block { margin-top: 20px; }
+.b-label { font-size: 10px; font-weight: bold; color: #666; margin-bottom: 8px; }
+.b-label.highlight { color: var(--info); }
+pre { background: #000; border: 1px solid #222; padding: 12px; border-radius: 4px; color: #a5d6ff; font-family: 'JetBrains Mono'; font-size: 11px; margin: 0; white-space: pre-wrap; }
 
-.cyber-toggle { position: relative; display: inline-block; width: 40px; height: 20px; }
-.cyber-toggle input { opacity: 0; width: 0; height: 0; }
-.toggle-track { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background: #333; border-radius: 20px; transition: 0.3s; }
-.toggle-track:before { position: absolute; content: ""; height: 14px; width: 14px; left: 3px; bottom: 3px; background: #fff; border-radius: 50%; transition: 0.3s; }
-input:checked + .toggle-track { background: var(--danger); box-shadow: 0 0 10px var(--danger); }
-input:checked + .toggle-track:before { transform: translateX(20px); }
+/* RTP CARD */
+.rtp-card { background: #111; border: 1px solid var(--purple); border-radius: 4px; padding: 12px; margin-bottom: 20px; }
+.rtp-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; text-align: center; }
+.c-item small { font-size: 8px; color: #666; }
+.c-item b { display: block; font-size: 14px; color: var(--purple); font-family: 'JetBrains Mono'; }
+.flow-meter { height: 3px; background: #222; margin-top: 10px; border-radius: 2px; overflow: hidden; }
+#flow-bar { height: 100%; width: 0%; background: var(--purple); transition: width 0.1s; }
 
-/* TAGS & COLORS */
-.tag { font-size: 9px; padding: 2px 5px; border-radius: 3px; font-weight: bold; margin-right: 5px; }
-.tag-SIP { background: rgba(88, 166, 255, 0.15); color: var(--info); }
-.tag-RTP { background: rgba(192, 132, 252, 0.15); color: var(--purple); }
-.tag-DTMF { background: rgba(210, 153, 34, 0.15); color: var(--warn); }
-.tag-NET { background: rgba(248, 81, 73, 0.15); color: var(--danger); }
-.tag-DB { background: rgba(255, 255, 255, 0.1); color: #ccc; }
-
-.sev-INFO { color: var(--info); }
+/* STATUS COLORS */
+.sev-ERROR { color: var(--danger); font-weight: bold; }
 .sev-WARN { color: var(--warn); font-weight: bold; }
-.sev-ERROR { color: var(--danger); font-weight: bold; text-shadow: 0 0 5px rgba(248,81,73,0.4); }
+.sev-INFO { color: var(--info); }
+.status-indicator.connected { color: var(--accent); }
+.pod-status.recording { color: var(--danger); animation: blink 1s infinite; }
 
-@keyframes blink { 50% { opacity: 0.4; } }
+@keyframes blink { 50% { opacity: 0.3; } }
