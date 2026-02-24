@@ -1,41 +1,37 @@
 // src/ui/js/store.js
-import { CONFIG } from './config.js'; // CONFIG'in module export edilebilir olması lazım
+import { CONFIG } from './config.js';
 
 /**
  * SENTIRIC REACTIVE STORE (Zero-Dependency)
- * Uygulamanın tek hakikat kaynağı (Single Source of Truth).
- * Tüm veri manipülasyonları sadece burada yapılır.
+ * v5.0 High-Performance State Manager
  */
 export const Store = {
-    // 1. STATE (Bellek)
     state: {
-        rawLogs: [],         // Tüm gelen loglar
-        filteredLogs: [],    // Ekranda gösterilecek loglar
-        activeTraces: new Map(), // Çağrı bazlı gruplama
+        rawLogs: [],         
+        filteredLogs: [],    
+        activeTraces: new Map(), 
         
         status: {
             pps: 0,
             isPaused: false,
-            isSnifferLive: false,
             socketConnected: false,
         },
         
         controls: {
-            lockedTraceId: null, // Odaklanılan çağrı
-            selectedLogIdx: null, // Detayı açılan log
+            lockedTraceId: null, 
+            selectedLogIdx: null, 
             hideRtpNoise: true,
             globalSearch: "",
             levelFilter: "ALL"
         }
     },
 
-    // 2. LISTENERS (Aboneler - UI bileşenleri burayı dinler)
     listeners: [],
+    
     subscribe(callback) {
         this.listeners.push(callback);
     },
 
-    // 3. ACTIONS (Veriyi değiştiren tek yöntem)
     dispatch(actionType, payload) {
         let shouldRender = false;
 
@@ -44,17 +40,14 @@ export const Store = {
                 if (this.state.status.isPaused) break;
                 
                 const log = payload;
-                // YENİ: Backend'den ID gelmediyse (fallback) frontend üretsin.
-                if (!log._idx) {
-                    log._idx = Date.now() + Math.random();
-                }
+                if (!log._idx) log._idx = Date.now() + Math.random(); // Fallback
 
-                // Gelen logu direkt sona ekle. Sıralamayı applyFilters yapacak.
                 this.state.rawLogs.push(log);
                 
-                // RAM Koruması (Fazla logları en baştan sil)
-                if (this.state.rawLogs.length > (CONFIG?.MAX_LOGS || 10000)) {
-                    this.state.rawLogs.shift();
+                // O(1) Ring Buffer: shift() yerine splice() kullanıldı.
+                if (this.state.rawLogs.length > CONFIG.MAX_LOGS) {
+                    const excess = this.state.rawLogs.length - CONFIG.MAX_LOGS;
+                    this.state.rawLogs.splice(0, excess);
                 }
 
                 this.state.status.pps++;
@@ -101,28 +94,22 @@ export const Store = {
                 shouldRender = true;
                 break;
 
-            case 'TICK_1S': // Her saniye metrikleri sıfırlar
+            case 'TICK_1S': 
                 this.state.status.pps = 0;
                 shouldRender = true;
                 break;
             
-            case 'SET_LEVEL': // <--- YENİ EKLENDİ
+            case 'SET_LEVEL': 
                 this.state.controls.levelFilter = payload;
                 shouldRender = this.applyFilters();
                 break;
-                
         }
 
-        // Eğer kritik bir veri değiştiyse UI'a haber ver
-        if (shouldRender) {
-            this.notify();
-        }
+        if (shouldRender) this.notify();
     },
 
-    // --- INTERNAL LOGIC ---
-
     extractTrace(log) {
-        const tid = log.trace_id || (log.attributes && log.attributes['sip.call_id']);
+        const tid = log.trace_id || log.attributes?.['sip.call_id'];
         if (!tid || tid === "unknown") return;
         
         if (!this.state.activeTraces.has(tid)) {
@@ -133,23 +120,22 @@ export const Store = {
     },
 
     applyFilters() {
-        // --- CHRONOS FIX v2.0: HER SEFERİNDE TAM SIRALAMA ---
-        // Bu, ağ gecikmelerinden kaynaklanan sıralama hatalarını kesin olarak çözer.
-        this.state.rawLogs.sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime());
+        // v5.0 CHRONOS FIX: Date.parse() yerine backend _idx ile mikrosaniye hassasiyetli Timsort
+        this.state.rawLogs.sort((a, b) => a._idx - b._idx);
         
         const { globalSearch, hideRtpNoise, lockedTraceId, levelFilter } = this.state.controls;
         
         this.state.filteredLogs = this.state.rawLogs.filter(log => {
-            const tid = log.trace_id || (log.attributes && log.attributes['sip.call_id']);
+            const tid = log.trace_id || log.attributes?.['sip.call_id'];
             
             if (lockedTraceId && tid !== lockedTraceId) return false;
             if (!lockedTraceId && hideRtpNoise && (log.event === "RTP_PACKET" || log.smart_tags?.includes('RTP'))) return false;
-            // INFO ???
+            
             if (levelFilter === "WARN" && log.severity !== "WARN" && log.severity !== "ERROR" && log.severity !== "FATAL") return false;
             if (levelFilter === "ERROR" && log.severity !== "ERROR" && log.severity !== "FATAL") return false;
             
-            // Kapsamlı Arama: Sadece ana alanlar değil, tüm JSON'u stringe çevirip içinde ara.
             if (globalSearch) {
+                // String çevirimi sadece arama yaparken.
                 const searchableString = JSON.stringify(log).toLowerCase();
                 if (!searchableString.includes(globalSearch)) return false;
             }
@@ -160,7 +146,6 @@ export const Store = {
     },
 
     notify() {
-        // Tüm UI bileşenlerine "Veri değişti, kendini güncelle" emri gönderir.
         this.listeners.forEach(fn => fn(this.state));
     }
 };

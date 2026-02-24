@@ -1,17 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SENTIRIC | PANOPTICON BLACK BOX v12.0</title>
     <link rel="stylesheet" href="/ui/css/theme.css">
     <link rel="stylesheet" href="/ui/css/layout.css">
-    <link
-        href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Inter:wght@400;600;700;900&display=swap"
-        rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Inter:wght@400;600;700;900&display=swap" rel="stylesheet">
 </head>
-
 <body>
     <div id="app-root">
         <!-- GLOBAL COMMAND HEADER -->
@@ -48,11 +44,11 @@
             </div>
         </header>
 
-<!-- INTELLIGENCE TOOLBAR -->
+        <!-- INTELLIGENCE TOOLBAR -->
         <nav id="toolbar">
             <div class="search-unit">
                 <span class="icon">🔍</span>
-                <input type="text" id="filter-global" placeholder="Search Trace ID, Phone, Error...">
+                <input type="text" id="filter-global" placeholder="Search Trace ID, Phone, Error, DB Query...">
             </div>
             <div class="v-divider"></div>
             <div class="filter-controls">
@@ -98,6 +94,7 @@
                 <div class="matrix-head">
                     <div class="c-time">TIMESTAMP</div>
                     <div class="c-lvl">LVL</div>
+                    <div class="c-node" style="color:#58a6ff">NODE</div>
                     <div class="c-svc">SERVICE</div>
                     <div class="c-evt">EVENT TYPE</div>
                     <div class="c-msg">DATA PAYLOAD / SUMMARY</div>
@@ -126,11 +123,10 @@
                         <div class="data-card meta">
                             <div class="m-row"><span class="k">TIME:</span> <span class="v" id="det-ts"></span></div>
                             <div class="m-row"><span class="k">NODE:</span> <span class="v" id="det-node"></span></div>
-                            <div class="m-row"><span class="k">TRACE:</span> <span class="v" id="det-trace"
-                                    class="trace-link"></span></div>
+                            <div class="m-row"><span class="k">TRACE:</span> <span class="v" id="det-trace" class="trace-link"></span></div>
                         </div>
 
-                        <!-- RTP ANALYZER -->
+                        <!-- RTP ANALYZER WITH VISUALIZER CANVAS -->
                         <div id="rtp-diag" class="data-card rtp" style="display:none;">
                             <div class="card-label">RTP FLOW DIAGNOSTICS</div>
                             <div class="rtp-stats">
@@ -138,10 +134,11 @@
                                 <div class="rs-item"><small>PT</small><b id="rtp-pt">--</b></div>
                                 <div class="rs-item"><small>SIZE</small><b id="rtp-len">--</b></div>
                             </div>
-                            <!-- Jitter Bar -->
                             <div class="jitter-track">
                                 <div id="jitter-bar"></div>
                             </div>
+                            <!-- v5.0 Visualizer Integration -->
+                            <canvas id="scope-chart" class="cyber-canvas" width="400" height="60"></canvas>
                         </div>
 
                         <!-- RAW WIRE PAYLOAD -->
@@ -161,7 +158,7 @@
                 <!-- VIEW 2: TIMELINE -->
                 <div id="view-timeline" class="insp-view scroller">
                     <div id="timeline-flow" class="timeline-body">
-                        <!-- JS ile doldurulacak -->
+                        <!-- JS Dynamic Content -->
                     </div>
                 </div>
             </aside>
@@ -169,11 +166,10 @@
 
         <footer id="main-footer">
             <div class="f-left">NODE: <span id="node-name" class="accent">--</span></div>
-            <div class="f-right">SENTIRIC OMNISCIENT ENGINE v12.0</div>
+            <div class="f-right">SENTIRIC OMNISCIENT ENGINE v12.0 (v5.0 CORE)</div>
         </footer>
     </div>
 
     <script type="module" src="/ui/js/app.js"></script>
 </body>
-
 </html>

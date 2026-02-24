@@ -1,18 +1,22 @@
 // src/ui/js/app.js
+"use strict";
+
 import { Store } from './store.js';
 import { LogStream } from './websocket.js';
 import { CONFIG } from './config.js';
+import { Visualizer } from './visualizer.js';
 
 const UI = {
     el: {},
     renderPending: false,
     isLeftMenuOpen: true,
     shouldScroll: true,
-    lastRenderedIdx: -1, // <--- YENİ: En son hangi logu çizdik?
-    selectionChanged: false, // <--- YENİ
+    lastRenderedIdx: -1, 
+    selectionChanged: false, 
+    viz: null, // v5.0 Visualizer Engine
     
     init() {
-        console.log("💠 Sovereign UI Engine Booting...");
+        console.log("💠 Sovereign UI Engine v5.0 Booting...");
         const get = id => document.getElementById(id);
         const getAll = cl => document.querySelectorAll(cl);
         
@@ -23,7 +27,6 @@ const UI = {
             workspace: get('workspace'),
             traceLocator: get('trace-locator'),
             
-            // Metrikler
             pps: get('pps-val'),
             buffer: get('buffer-val'),
             total: get('total-val'),
@@ -31,7 +34,6 @@ const UI = {
             snifferToggle: get('sniffer-toggle'),
             snifferStatus: get('sniffer-status'),
             
-            // Kontroller
             inpSearch: get('filter-global'),
             selLevel: get('filter-level'),
             btnNoise: get('btn-toggle-noise'),
@@ -40,13 +42,11 @@ const UI = {
             btnUnlock: get('btn-unlock-trace'),
             btnCloseInsp: get('btn-close-insp'),
             
-            // Export (Düzeltildi)
             btnExportMain: document.querySelector('.dropdown > .t-btn.primary'),
             dropdownContent: document.querySelector('.dropdown-content'),
             btnExpRaw: get('btn-export-raw'),
             btnExpAi: get('btn-export-ai'),
             
-            // Sağ Panel
             tabBtns: getAll('.tab-btn'),
             tabViews: getAll('.insp-view'),
             inspPlaceholder: get('insp-placeholder'),
@@ -62,15 +62,14 @@ const UI = {
             timelineFlow: get('timeline-flow')
         };
 
+        this.viz = new Visualizer();
+
         this.injectLeftMenuToggle();
-        this.injectNodeColumnHeader(); // Tablo başlığına NODE ekle
         this.bindEvents();
-
-        // --- DINAMIK CONFIG YÜKLEME ---
         this.loadSystemConfig();
-
         this.checkSnifferState();
         
+        // 60FPS Frame Throttling
         Store.subscribe((state) => {
             if (!this.renderPending) {
                 this.renderPending = true;
@@ -85,86 +84,61 @@ const UI = {
         this.startNetwork();
     },
 
-    // YENİ FONKSİYON
     async loadSystemConfig() {
         try {
             const response = await fetch('/api/config');
             const config = await response.json();
-
-            console.log("💠 Sovereign UI Engine Config Loaded:", config);
-            
-            // Versiyonu güncelle
             const vBadge = document.querySelector('.v-badge');
             if (vBadge) vBadge.innerText = `v${config.version}`;
-            
-            // Node adını güncelle
             const nodeNameEl = document.getElementById('node-name');
             if (nodeNameEl) nodeNameEl.innerText = config.node_name;
-
-            // TODO: Upstream kontrol butonunu da buraya ekleyebiliriz.
-
         } catch (e) {
             console.error("Failed to load system config:", e);
         }
     },    
 
-    injectLeftMenuToggle() {
+injectLeftMenuToggle() {
         if (!this.el.traceLocator) return;
         const header = this.el.traceLocator.querySelector('.pane-header');
         if (header) {
+            // Sağ taraftaki butonları sarmalayacak bir flex div oluştur
+            const rightControls = document.createElement('div');
+            rightControls.style.display = 'flex';
+            rightControls.style.gap = '8px';
+            rightControls.style.alignItems = 'center';
+
+            // Mevcut çöp kutusu ikonunu bul ve yeni sarmalayıcıya taşı
+            const trashBtn = header.querySelector('#btn-clear-traces');
+            if(trashBtn) rightControls.appendChild(trashBtn);
+
+            // Aç/Kapa butonunu oluştur
             const toggleBtn = document.createElement('button');
             toggleBtn.innerHTML = '◀';
             toggleBtn.className = 'icon-btn';
-            toggleBtn.style.position = 'absolute';
-            toggleBtn.style.right = '10px';
             toggleBtn.onclick = () => {
                 this.isLeftMenuOpen = !this.isLeftMenuOpen;
                 this.el.workspace.style.gridTemplateColumns = this.isLeftMenuOpen 
                     ? 'var(--w-left) 1fr var(--w-right)' 
                     : '40px 1fr var(--w-right)';
-                
                 this.el.traceList.style.display = this.isLeftMenuOpen ? 'block' : 'none';
                 toggleBtn.innerHTML = this.isLeftMenuOpen ? '◀' : '▶';
             };
-            header.style.position = 'relative';
-            header.appendChild(toggleBtn);
-        }
-    },
 
-    injectNodeColumnHeader() {
-        // Mevcut CSS Grid yapısını bozmamak için JS ile CSS'i de güncelliyoruz.
-        const header = document.querySelector('.matrix-head');
-        if (header) {
-            // Grid Columns: Timestamp | Lvl | Node | Service | Event | Msg
-            header.style.gridTemplateColumns = '85px 55px 120px 140px 185px 1fr';
-            // Mevcut başlıkları temizle ve yenilerini ekle
-            header.innerHTML = `
-                <div class="c-time">TIMESTAMP</div>
-                <div class="c-lvl">LVL</div>
-                <div class="c-node" style="color:#58a6ff">NODE</div>
-                <div class="c-svc">SERVICE</div>
-                <div class="c-evt">EVENT TYPE</div>
-                <div class="c-msg">DATA PAYLOAD / SUMMARY</div>
-            `;
+            rightControls.appendChild(toggleBtn);
+            header.appendChild(rightControls);
         }
-        // Satırlar için CSS kuralını da güncellememiz gerek, bunu renderMatrix içinde inline style ile yapacağız.
     },
 
     bindEvents() {
-        // --- Auto Scroll Dedektörü ---
-        // Kullanıcı yukarı kaydırırsa otomatik kaydırmayı durdur.
         this.el.scroller?.addEventListener('scroll', () => {
             const el = this.el.scroller;
-            // Tolerans payı (10px) ile en altta olup olmadığını kontrol et
-            const isAtBottom = Math.abs(el.scrollHeight - el.scrollTop - el.clientHeight) < 50;
+            // ceil kullanarak pixel kırılmalarındaki hataları engelle
+            const isAtBottom = Math.ceil(el.scrollTop + el.clientHeight) >= el.scrollHeight - 10;
             this.shouldScroll = isAtBottom;
         });
 
         this.el.inpSearch?.addEventListener('input', (e) => Store.dispatch('SET_SEARCH', e.target.value));
-        
-        this.el.selLevel?.addEventListener('change', (e) => {
-            Store.dispatch('SET_LEVEL', e.target.value);
-        });
+        this.el.selLevel?.addEventListener('change', (e) => Store.dispatch('SET_LEVEL', e.target.value));
 
         this.el.btnNoise?.addEventListener('click', (e) => {
             Store.dispatch('TOGGLE_NOISE');
@@ -176,15 +150,14 @@ const UI = {
             Store.dispatch('TOGGLE_PAUSE');
             e.target.innerText = Store.state.status.isPaused ? "▶ RESUME" : "PAUSE";
             e.target.classList.toggle('danger', Store.state.status.isPaused);
-            // Resume edilince en alta kaydır
             if(!Store.state.status.isPaused) this.shouldScroll = true;
         });
 
         this.el.btnClear?.addEventListener('click', () => {
-                    Store.dispatch('WIPE_DATA');
-                    this.el.matrix.innerHTML = ''; // DOM'u da temizle
-                    this.lastRenderedIdx = -1; // Sayacı sıfırla
-                });
+            Store.dispatch('WIPE_DATA');
+            this.el.matrix.innerHTML = ''; 
+            this.lastRenderedIdx = -1; 
+        });
                 
         this.el.btnUnlock?.addEventListener('click', () => {
             Store.dispatch('UNLOCK_TRACE');
@@ -194,18 +167,13 @@ const UI = {
 
         this.el.btnCloseInsp?.addEventListener('click', () => this.closeInspector());
 
-        // bir satıra tıklandığında renderMatrix'in tekrar çalışmasını tetiklemek için 
         this.el.matrix?.addEventListener('click', (e) => {
             const row = e.target.closest('.log-row');
             if (row) {
                 const idx = parseFloat(row.dataset.idx);
-                // Önce store'u güncelle
                 Store.dispatch('SELECT_LOG', idx);
-                // UI'ın seçimi render etmesi gerektiğini işaretle
                 this.selectionChanged = true; 
-                // Paneli aç
                 this.openInspector(idx);
-                // Scroll'u durdur
                 this.shouldScroll = false; 
             }
         });
@@ -232,8 +200,8 @@ const UI = {
 
         this.el.snifferToggle?.addEventListener('change', (e) => {
             const isActive = e.target.checked;
-            const action = isActive ? 'enable' : 'disable';
-            fetch(`/api/sniffer/${action}`, { method: 'POST' }).then(r=>r.json()).then(res=>{
+            fetch(`/api/sniffer/${isActive ? 'enable' : 'disable'}`, { method: 'POST' })
+            .then(r=>r.json()).then(()=>{
                 this.el.snifferStatus.innerText = isActive ? "LIVE" : "STANDBY";
                 this.el.snifferStatus.className = `pod-val ${isActive ? 'recording' : 'standby'}`;
             }).catch(()=>{});
@@ -256,7 +224,13 @@ const UI = {
 
     startNetwork() {
         new LogStream(CONFIG.WS_URL, 
-            (log) => Store.dispatch('INGEST_LOG', log),
+            (log) => {
+                Store.dispatch('INGEST_LOG', log);
+                // Canlı görselleştiriciye veri besle (RTP Packets)
+                if (this.viz.isActive && log.event === "RTP_PACKET") {
+                    this.viz.pushData(log.attributes?.['net.packet_len'] || 0);
+                }
+            },
             (isOnline) => {
                 if(this.el.status) {
                     this.el.status.innerText = isOnline ? "ONLINE" : "OFFLINE";
@@ -287,41 +261,34 @@ const UI = {
         this.renderTraces(state);
     },
 
-renderMatrix(state) {
+    renderMatrix(state) {
         if (!this.el.matrix) return;
 
-        // 1. Render Edilecek Yeni Logları Bul
-        // lastRenderedIdx, hangi logun en son DOM'a eklendiğini takip eder.
+        // Differential Rendering
         const newLogs = state.filteredLogs.filter(l => l._idx > this.lastRenderedIdx);
-        
-        // Eğer yeni log yoksa ve bir satır seçimi değiştirilmediyse, render etmeye gerek yok.
-        if (newLogs.length === 0 && !this.selectionChanged) {
-            return;
-        }
+        if (newLogs.length === 0 && !this.selectionChanged) return;
 
-        // 2. DOM Fragment'i ile Performans Optimizasyonu
         const fragment = document.createDocumentFragment();
         
         newLogs.forEach(l => {
             const div = document.createElement('div');
             div.className = `log-row`;
             div.dataset.idx = l._idx;
-            div.style.gridTemplateColumns = '85px 55px 120px 140px 185px 1fr';
             
             const time = l.ts ? l.ts.substring(11, 23) : '--:--';
             const svcName = l.resource ? l.resource['service.name'] : 'sys';
-            let nodeName = l.resource && l.resource['host.name'] ? l.resource['host.name'] : 'local';
+            let nodeName = l.resource?.['host.name'] || 'local';
             if (nodeName.length > 15) nodeName = nodeName.substring(0, 12) + '..';
             
             let sevColor = "#ccc";
             if (l.severity === "ERROR" || l.severity === "FATAL") sevColor = "var(--danger)";
             else if (l.severity === "WARN") sevColor = "var(--warn)";
 
-            // --- GÖRSEL ZEKA (Smart Tags) ---
             const tagsHtml = (l.smart_tags || [])
                 .map(tag => `<span class="tag tag-${tag.toLowerCase()}">${tag}</span>`)
                 .join('');
 
+            // innerHTML sanitization (escapeHtml for message)
             div.innerHTML = `
                 <span style="color:#666">${time}</span>
                 <span style="color:${sevColor}; font-weight:bold;">${l.severity}</span>
@@ -335,19 +302,17 @@ renderMatrix(state) {
             `;
             
             fragment.appendChild(div);
-            // Son render edilen logun indeksini hafızaya al
             this.lastRenderedIdx = l._idx;
         });
 
-        // 3. Yeni logları DOM'a tek seferde ekle
         this.el.matrix.appendChild(fragment);
 
-        // 4. DOM'da çok fazla satır birikmesini engelle (Ring Buffer mantığı)
+        // UI DOM Limiti
         while (this.el.matrix.children.length > 500) {
             this.el.matrix.removeChild(this.el.matrix.firstChild);
         }
 
-        // 5. Seçili Satır Vurgulamasını Yönet
+        // Selection Update
         const prevSelected = this.el.matrix.querySelector('.log-row.selected');
         if (prevSelected && prevSelected.dataset.idx != state.controls.selectedLogIdx) {
             prevSelected.classList.remove('selected');
@@ -356,11 +321,9 @@ renderMatrix(state) {
             const newSelected = this.el.matrix.querySelector(`.log-row[data-idx="${state.controls.selectedLogIdx}"]`);
             if (newSelected) newSelected.classList.add('selected');
         }
-        this.selectionChanged = false; // Seçim değişikliği işlendi
+        this.selectionChanged = false;
 
-        // 6. Akıllı Auto-Scroll
         if (!state.status.isPaused && this.shouldScroll && this.el.scroller) {
-            void this.el.scroller.offsetHeight; 
             this.el.scroller.scrollTop = this.el.scroller.scrollHeight;
         }
     },
@@ -382,7 +345,7 @@ renderMatrix(state) {
         this.el.traceList.innerHTML = html;
     },
 
-    openInspector(idx) {
+openInspector(idx) {
         const log = Store.state.rawLogs.find(l => l._idx === idx);
         if (!log) return;
 
@@ -395,18 +358,27 @@ renderMatrix(state) {
         this.el.inspContent.style.display = 'block';
 
         if (this.el.detTs) this.el.detTs.innerText = log.ts || 'N/A';
-        if (this.el.detNode) this.el.detNode.innerText = log.resource ? log.resource['host.name'] : 'N/A';
-        const tid = log.trace_id || (log.attributes && log.attributes['sip.call_id']);
+        if (this.el.detNode) this.el.detNode.innerText = log.resource?.['host.name'] || 'N/A';
+        const tid = log.trace_id || log.attributes?.['sip.call_id'];
         if (this.el.detTrace) this.el.detTrace.innerText = tid || 'No Trace ID attached';
         if (this.el.detJson) this.el.detJson.innerText = JSON.stringify(log.attributes || {}, null, 2);
 
-        const isRtp = log.event === "RTP_PACKET" || (log.smart_tags && log.smart_tags.includes('RTP'));
+        // Visualizer Kontrolü
+        const isRtp = log.event === "RTP_PACKET" || log.smart_tags?.includes('RTP');
         if (this.el.rtpCard) {
             this.el.rtpCard.style.display = isRtp ? 'block' : 'none';
             if (isRtp && log.attributes) {
                 if (this.el.rtpPt) this.el.rtpPt.innerText = log.attributes['rtp.payload_type'] || '-';
                 if (this.el.rtpSeq) this.el.rtpSeq.innerText = log.attributes['rtp.sequence'] || '-';
                 if (this.el.rtpLen) this.el.rtpLen.innerText = (log.attributes['net.packet_len'] || 0) + 'B';
+                
+                // DÜZELTME: DOM Elementinin ekranda görünür hale gelmesi için küçük bir bekleme süresi
+                setTimeout(() => {
+                    this.viz.resize(); // Canvas'ın boyut alması için DOM'un çizilmesini bekle
+                    this.viz.start();
+                }, 50);
+            } else {
+                this.viz.stop();
             }
         }
         this.renderTimeline();
@@ -414,6 +386,7 @@ renderMatrix(state) {
 
     closeInspector() {
         Store.dispatch('SELECT_LOG', null);
+        this.viz.stop(); // Animasyonu durdur, GPU'yu dinlendir
         this.el.workspace.classList.remove('inspector-open');
         this.el.workspace.style.gridTemplateColumns = this.isLeftMenuOpen 
             ? 'var(--w-left) 1fr 0px' 
@@ -426,16 +399,16 @@ renderMatrix(state) {
         let targetTrace = state.controls.lockedTraceId;
         if (!targetTrace && state.controls.selectedLogIdx !== null) {
             const log = state.rawLogs.find(l => l._idx === state.controls.selectedLogIdx);
-            if (log) targetTrace = log.trace_id || (log.attributes && log.attributes['sip.call_id']);
+            if (log) targetTrace = log.trace_id || log.attributes?.['sip.call_id'];
         }
         if (!targetTrace) {
             this.el.timelineFlow.innerHTML = '<div class="empty-hint">Lock a trace or select a packet to view causality timeline.</div>';
             return;
         }
         const journey = state.rawLogs
-            .filter(l => (l.trace_id || (l.attributes && l.attributes['sip.call_id'])) === targetTrace)
+            .filter(l => (l.trace_id || l.attributes?.['sip.call_id']) === targetTrace)
             .filter(l => l.event !== "RTP_PACKET") 
-            .sort((a, b) => a.ts.localeCompare(b.ts));
+            .sort((a, b) => a._idx - b._idx); // v5.0 O(N) Sorting
 
         if (!journey.length) { 
             this.el.timelineFlow.innerHTML = '<div class="empty-hint">No timeline events found.</div>'; 
@@ -473,7 +446,6 @@ renderMatrix(state) {
         
         if (dataToExport.length === 0) return alert("No data to export!");
         
-        // Zenginleştirilmiş dosya adı
         const timestamp = new Date().toISOString().replace(/:/g, '-').slice(0, -5);
         const nodeName = document.getElementById('node-name')?.innerText || 'local';
         const fileNameBase = `panopticon_${trace || 'global'}_${nodeName}_${timestamp}`;
@@ -482,7 +454,9 @@ renderMatrix(state) {
             const blob = new Blob([JSON.stringify(dataToExport, null, 2)], { type: 'application/json' });
             this.downloadFile(blob, `${fileNameBase}_evidence.json`);
         } else if (type === 'ai') {
-            // ... (AI report logic aynı kalacak) ...
+            const lines = dataToExport.map(l => `[${l.ts}] ${l.severity} | ${l.resource['service.name']} -> ${l.event}: ${l.message}`);
+            const report = `# Sentiric AI Context Report\n\n## Timeline\n\`\`\`\n${lines.join('\n')}\n\`\`\``;
+            const blob = new Blob([report], { type: 'text/markdown' });
             this.downloadFile(blob, `${fileNameBase}_report.md`);
         }
         if(this.el.dropdownContent) this.el.dropdownContent.style.display = 'none';

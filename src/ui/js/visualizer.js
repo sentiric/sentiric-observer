@@ -1,92 +1,75 @@
 // src/ui/js/visualizer.js
+import { CONFIG } from './config.js';
 
-export const visualizer = {
-    scopeCanvas: null,
-    scopeCtx: null,
-    audioCanvas: null,
-    audioCtx: null,
-    data: new Array(100).fill(0),
-    audioActive: false,
-    
-    init() {
+export class Visualizer {
+    constructor() {
         this.scopeCanvas = document.getElementById('scope-chart');
-        this.audioCanvas = document.getElementById('audio-viz');
+        this.scopeCtx = this.scopeCanvas ? this.scopeCanvas.getContext('2d') : null;
+        this.data = new Array(CONFIG.CHART_POINTS || 150).fill(0);
+        this.isActive = false;
+        this.animationId = null;
         
         if (this.scopeCanvas) {
-            this.scopeCtx = this.scopeCanvas.getContext('2d');
             this.resize();
-            this.animateScope();
+            window.addEventListener('resize', () => this.resize());
         }
-        if (this.audioCanvas) {
-            this.audioCtx = this.audioCanvas.getContext('2d');
-        }
-    },
+    }
     
     resize() {
         if(!this.scopeCanvas) return;
-        this.scopeCanvas.width = this.scopeCanvas.offsetWidth;
-        this.scopeCanvas.height = this.scopeCanvas.offsetHeight;
-    },
+        // Sabit piksel netliği için container ölçüsünü canvas çözünürlüğüne eşitle
+        this.scopeCanvas.width = this.scopeCanvas.offsetWidth || 400;
+        this.scopeCanvas.height = this.scopeCanvas.offsetHeight || 60;
+    }
     
     pushData(val) {
         this.data.push(val);
         this.data.shift();
-    },
+    }
 
-    startAudioViz() {
-        this.audioActive = true;
-        this.animateAudio();
-    },
+    start() {
+        if (this.isActive || !this.scopeCtx) return;
+        this.isActive = true;
+        this.resize();
+        this.animateScope();
+    }
 
-    stopAudioViz() {
-        this.audioActive = false;
-    },
+    stop() {
+        this.isActive = false;
+        if (this.animationId) {
+            cancelAnimationFrame(this.animationId);
+            this.animationId = null;
+        }
+    }
 
     animateScope() {
+        if (!this.isActive) return;
+
         const ctx = this.scopeCtx;
         const w = this.scopeCanvas.width;
         const h = this.scopeCanvas.height;
         
         ctx.clearRect(0, 0, w, h);
+        
+        // Cyberpunk style
         ctx.strokeStyle = '#00ff9d';
-        ctx.lineWidth = 2;
-        ctx.shadowBlur = 8;
-        ctx.shadowColor = '#00ff9d';
+        ctx.lineWidth = 1.5;
+        ctx.shadowBlur = 5;
+        ctx.shadowColor = 'rgba(0, 255, 157, 0.8)';
         
         ctx.beginPath();
         const step = w / (this.data.length - 1);
-        const max = Math.max(20, ...this.data);
+        
+        // Auto scaling
+        const max = Math.max(10, ...this.data); 
         
         this.data.forEach((val, i) => {
-            const y = h - ((val / max) * h * 0.7) - (h * 0.15);
+            const y = h - ((val / max) * h * 0.8) - (h * 0.1);
             if (i === 0) ctx.moveTo(0, y);
             else ctx.lineTo(i * step, y);
         });
         ctx.stroke();
         
-        requestAnimationFrame(() => this.animateScope());
-    },
-
-    animateAudio() {
-        if (!this.audioActive || !this.audioCtx) return;
-        
-        const ctx = this.audioCtx;
-        const w = this.audioCanvas.width = this.audioCanvas.offsetWidth;
-        const h = this.audioCanvas.height = this.audioCanvas.offsetHeight;
-        
-        ctx.clearRect(0, 0, w, h);
-        ctx.fillStyle = '#a855f7';
-        
-        const barCount = 40;
-        const gap = 2;
-        const barWidth = (w / barCount) - gap;
-        
-        for (let i = 0; i < barCount; i++) {
-            // Gerçekçi jitter/ses dalgası simülasyonu
-            const barHeight = Math.random() * h * 0.8;
-            ctx.fillRect(i * (barWidth + gap), (h - barHeight) / 2, barWidth, barHeight);
-        }
-        
-        requestAnimationFrame(() => this.animateAudio());
+        this.animationId = requestAnimationFrame(() => this.animateScope());
     }
-};
+}
