@@ -1,5 +1,4 @@
-// src/ui/js/visualizer.js
-import { CONFIG } from './config.js';
+import { CONFIG } from '../config.js';
 
 export class Visualizer {
     constructor() {
@@ -17,7 +16,6 @@ export class Visualizer {
     
     resize() {
         if(!this.scopeCanvas) return;
-        // Sabit piksel netliği için container ölçüsünü canvas çözünürlüğüne eşitle
         this.scopeCanvas.width = this.scopeCanvas.offsetWidth || 400;
         this.scopeCanvas.height = this.scopeCanvas.offsetHeight || 60;
     }
@@ -51,7 +49,6 @@ export class Visualizer {
         
         ctx.clearRect(0, 0, w, h);
         
-        // Cyberpunk style
         ctx.strokeStyle = '#00ff9d';
         ctx.lineWidth = 1.5;
         ctx.shadowBlur = 5;
@@ -59,8 +56,6 @@ export class Visualizer {
         
         ctx.beginPath();
         const step = w / (this.data.length - 1);
-        
-        // Auto scaling
         const max = Math.max(10, ...this.data); 
         
         this.data.forEach((val, i) => {

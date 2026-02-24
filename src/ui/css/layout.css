@@ -56,13 +56,7 @@ h1, h2, h3 { margin: 0; }
 .search-unit input:focus { border-color: var(--accent); box-shadow: 0 0 5px rgba(0,255,157,0.2); }
 .search-unit .icon { position: absolute; left: 8px; font-size: 12px; color: #555; top: 7px; }
 
-/* WORKSPACE & PANELS */
-#workspace {
-    flex: 1; display: grid;
-    grid-template-columns: var(--w-left) 1fr 0px; 
-    overflow: hidden; 
-    height: calc(100vh - var(--h-header) - var(--h-toolbar) - var(--h-footer)); 
-}
+
 
 #trace-locator { background: var(--bg-panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; z-index: 50; overflow: hidden; }
 #matrix-pane { background: var(--bg-dark); display: flex; flex-direction: column; min-width: 0; height: 100%; overflow: hidden; }
@@ -112,3 +106,58 @@ h1, h2, h3 { margin: 0; }
 /* FOOTER */
 #main-footer { height: var(--h-footer); background: var(--bg-panel); border-top: 1px solid #222; display: flex; justify-content: space-between; align-items: center; padding: 0 20px; font-size: 9px; color: #555; letter-spacing: 1px; font-weight: bold; z-index: 500;}
 .accent { color: var(--accent); }
+
+/* --- DİNAMİK GRID VE SOL MENÜ YÖNETİMİ --- */
+
+#workspace {
+    display: grid;
+    /* Varsayılan: Sol Açık (280px) | Orta (Esnek) | Sağ Kapalı (0px) */
+    grid-template-columns: var(--w-left) 1fr 0px; 
+    overflow: hidden; 
+    height: calc(100vh - var(--h-header) - var(--h-toolbar) - var(--h-footer)); 
+    transition: grid-template-columns 0.25s cubic-bezier(0.4, 0, 0.2, 1); /* Profesyonel geçiş animasyonu */
+}
+
+/* DURUM 1: Sol Panel Kapalı */
+#workspace.left-collapsed {
+    grid-template-columns: 40px 1fr 0px;
+}
+
+/* DURUM 2: Sağ Panel Açık */
+#workspace.inspector-open {
+    grid-template-columns: var(--w-left) 1fr var(--w-right);
+}
+
+/* DURUM 3: Sol Kapalı + Sağ Açık */
+#workspace.left-collapsed.inspector-open {
+    grid-template-columns: 40px 1fr var(--w-right);
+}
+
+/* --- SOL PANEL KAPALIYKEN GİZLENECEK ELEMANLAR --- */
+
+/* 1. Başlık (CALL JOURNEYS) gizlensin */
+#workspace.left-collapsed #trace-locator .pane-header > span {
+    display: none;
+}
+
+/* 2. Çöp Kutusu butonu gizlensin */
+#workspace.left-collapsed #trace-locator #btn-clear-traces {
+    display: none;
+}
+
+/* 3. Liste, Kaydırma Çubuğu ve Footer (Unlock Butonu) gizlensin */
+#workspace.left-collapsed #trace-list,
+#workspace.left-collapsed .pane-footer {
+    display: none !important;
+}
+
+/* 4. Header sadece Ok tuşunu ortalasın */
+#workspace.left-collapsed #trace-locator .pane-header {
+    justify-content: center; /* Ortala */
+    padding: 0;              /* Boşlukları sil */
+}
+
+/* 5. Header içindeki buton grubu sıkışmasın */
+#workspace.left-collapsed .header-controls {
+    gap: 0 !important;
+}

@@ -2,8 +2,8 @@
 import { CONFIG } from './config.js';
 
 /**
- * SENTIRIC REACTIVE STORE (Zero-Dependency)
- * v5.0 High-Performance State Manager
+ * SENTIRIC REACTIVE STORE v6.1
+ * Fixed: Noise filter logic refined (Service Logs vs Raw Packets)
  */
 export const Store = {
     state: {
@@ -20,7 +20,7 @@ export const Store = {
         controls: {
             lockedTraceId: null, 
             selectedLogIdx: null, 
-            hideRtpNoise: true,
+            hideRtpNoise: true, // Varsayılan: Gürültü Gizli
             globalSearch: "",
             levelFilter: "ALL"
         }
@@ -40,11 +40,10 @@ export const Store = {
                 if (this.state.status.isPaused) break;
                 
                 const log = payload;
-                if (!log._idx) log._idx = Date.now() + Math.random(); // Fallback
+                if (!log._idx) log._idx = Date.now() + Math.random();
 
                 this.state.rawLogs.push(log);
                 
-                // O(1) Ring Buffer: shift() yerine splice() kullanıldı.
                 if (this.state.rawLogs.length > CONFIG.MAX_LOGS) {
                     const excess = this.state.rawLogs.length - CONFIG.MAX_LOGS;
                     this.state.rawLogs.splice(0, excess);
@@ -112,15 +111,23 @@ export const Store = {
         const tid = log.trace_id || log.attributes?.['sip.call_id'];
         if (!tid || tid === "unknown") return;
         
+        const hasAudio = !!log.attributes?.['rtp.audio_b64'];
+
         if (!this.state.activeTraces.has(tid)) {
-            this.state.activeTraces.set(tid, { start: log.ts, count: 1 });
+            this.state.activeTraces.set(tid, { 
+                start: log.ts, 
+                count: 1, 
+                hasAudio: hasAudio 
+            });
         } else {
-            this.state.activeTraces.get(tid).count++;
+            const trace = this.state.activeTraces.get(tid);
+            trace.count++;
+            if (hasAudio) trace.hasAudio = true; 
         }
     },
 
     applyFilters() {
-        // v5.0 CHRONOS FIX: Date.parse() yerine backend _idx ile mikrosaniye hassasiyetli Timsort
+        // v5.0 CHRONOS FIX: Zaman/Index sıralaması
         this.state.rawLogs.sort((a, b) => a._idx - b._idx);
         
         const { globalSearch, hideRtpNoise, lockedTraceId, levelFilter } = this.state.controls;
@@ -128,14 +135,23 @@ export const Store = {
         this.state.filteredLogs = this.state.rawLogs.filter(log => {
             const tid = log.trace_id || log.attributes?.['sip.call_id'];
             
+            // 1. TRACE LOCK (Odaklanma)
             if (lockedTraceId && tid !== lockedTraceId) return false;
-            if (!lockedTraceId && hideRtpNoise && (log.event === "RTP_PACKET" || log.smart_tags?.includes('RTP'))) return false;
             
+            // 2. NOISE FILTER (Gürültü Filtresi) - KRİTİK DÜZELTME BURADA
+            // Eskiden 'RTP' etiketi olan her şeyi siliyorduk (Media Service dahil).
+            // Şimdi sadece Sniffer'dan gelen ham paketleri (RTP_PACKET) siliyoruz.
+            // DTMF olayları (event 101) veya Media Service INFO logları korunur.
+            if (!lockedTraceId && hideRtpNoise) {
+                if (log.event === "RTP_PACKET") return false;
+            }
+            
+            // 3. LEVEL FILTER
             if (levelFilter === "WARN" && log.severity !== "WARN" && log.severity !== "ERROR" && log.severity !== "FATAL") return false;
             if (levelFilter === "ERROR" && log.severity !== "ERROR" && log.severity !== "FATAL") return false;
             
+            // 4. GLOBAL SEARCH
             if (globalSearch) {
-                // String çevirimi sadece arama yaparken.
                 const searchableString = JSON.stringify(log).toLowerCase();
                 if (!searchableString.includes(globalSearch)) return false;
             }

@@ -72,20 +72,20 @@ impl NetworkSniffer {
     }
 
     fn process_payload(&self, payload: &[u8], original_len: u32) -> Option<LogRecord> {
-         // [MEVCUT KOD AYNEN KORUNACAK]
-        if let Ok(data_str) = std::str::from_utf8(payload) {
-            if data_str.contains("SIP/2.0") {
-                return self.create_sip_log(data_str, original_len);
+            if let Ok(data_str) = std::str::from_utf8(payload) {
+                if data_str.contains("SIP/2.0") {
+                    return self.create_sip_log(data_str, original_len);
+                }
             }
+            if payload.len() > 12 && (payload[0] & 0xC0) == 0x80 {
+                let pt = payload[1] & 0x7F;
+                if pt == 0 || pt == 8 || pt == 18 || pt == 101 || (pt >= 96 && pt <= 127) {
+                    // DÜZELTME: payload'ın kendisini de fonksiyona gönderiyoruz
+                    return self.create_rtp_log(pt, original_len, payload);
+                }
+            }
+            None
         }
-        if payload.len() > 12 && (payload[0] & 0xC0) == 0x80 {
-             let pt = payload[1] & 0x7F;
-             if pt == 0 || pt == 8 || pt == 18 || pt == 101 || (pt >= 96 && pt <= 127) {
-                 return self.create_rtp_log(pt, original_len);
-             }
-        }
-        None
-    }
 
     fn create_sip_log(&self, data: &str, len: u32) -> Option<LogRecord> {
         // [AYNI KALACAK]
@@ -114,12 +114,22 @@ impl NetworkSniffer {
         Some(log)
     }
 
-    fn create_rtp_log(&self, pt: u8, len: u32) -> Option<LogRecord> {
-        // [AYNI KALACAK]
+// DÜZELTME: payload parametresi eklendi
+    fn create_rtp_log(&self, pt: u8, len: u32, payload: &[u8]) -> Option<LogRecord> {
         let mut attributes = HashMap::new();
         attributes.insert("net.packet_len".to_string(), Value::from(len));
         attributes.insert("rtp.payload_type".to_string(), Value::from(pt));
         attributes.insert("net.interface".to_string(), Value::String(self.interface.clone()));
+        
+        // YENİ: RTP Ses Verisini (Payload) Base64 olarak paketle (Sadece G.711 PCMA/PCMU için - PT 8 ve PT 0)
+        // RTP Header standart 12 byte'tır. Kalan kısım sestir.
+        if (pt == 8 || pt == 0) && payload.len() > 12 {
+            let rtp_payload = &payload[12..]; // 12. byte'tan sonrasını al (Ses verisi)
+            use base64::{Engine as _, engine::general_purpose::STANDARD};
+            let b64_audio = STANDARD.encode(rtp_payload);
+            attributes.insert("rtp.audio_b64".to_string(), Value::String(b64_audio));
+        }
+
         let msg = if pt == 101 { "RTP EVENT (DTMF)" } else { "RTP MEDIA" };
         let mut log = self.build_log("RTP_PACKET", format!("{} (PT: {})", msg, pt), attributes);
         if pt == 101 {

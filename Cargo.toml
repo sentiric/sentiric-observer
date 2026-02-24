@@ -1,6 +1,6 @@
 [package]
 name = "sentiric-observer"
-version = "5.0.0" # Major sürüm atladık
+version = "6.0.0" 
 edition = "2021"
 authors = ["Sentiric Architecture Team"]
 
@@ -39,6 +39,7 @@ hostname = "0.3"
 lazy_static = "1.4"
 regex = "1.10"
 dotenv = "0.15"
+base64 = "0.21"
 
 [build-dependencies]
 tonic-build = "0.11"

@@ -1547,11 +1547,12 @@ checksum = "d767eb0aabc880b29956c35734170f26ed551a859dbd361d140cdbeca61ab1e2"
 
 [[package]]
 name = "sentiric-observer"
-version = "5.0.0"
+version = "6.0.0"
 dependencies = [
  "anyhow",
  "async-trait",
  "axum 0.7.9",
+ "base64 0.21.7",
  "bollard",
  "bytes",
  "chrono",
