@@ -1,4 +1,4 @@
-// src/ui/js/components/toolbar.js
+// sentiric-observer/src/ui/js/components/toolbar.js
 import { Store } from '../store.js';
 
 export class ToolbarComponent {
@@ -49,7 +49,6 @@ export class ToolbarComponent {
                 const isBlock = this.el.dropdownContent.style.display === 'block';
                 this.el.dropdownContent.style.display = isBlock ? 'none' : 'block';
             });
-            // Dışarı tıklandığında menüyü kapat
             document.addEventListener('click', (e) => {
                 if (!e.target.closest('.dropdown')) this.el.dropdownContent.style.display = 'none';
             });
@@ -61,53 +60,38 @@ export class ToolbarComponent {
 
     exportData(type) {
         const state = Store.state;
-        const trace = state.controls.lockedTraceId;
         
-        // 1. Veri Kaynağını Belirle
-        // Eğer Trace kilitliyse: Sadece o trace'e ait TÜM veriyi (RawLogs içinden) al.
-        // Eğer Kilitli değilse: Ekranda ne görüyorsam (FilteredLogs) onu al.
-        let dataToExport = trace 
-            ? state.rawLogs.filter(l => (l.trace_id || l.attributes?.['sip.call_id']) === trace) 
-            : [...state.filteredLogs]; // Kopyasını al
+        // [YENİ]: Sadece Filtrelenmiş ve Ekranda Görünen Logları İndir (Level Filter Dahil)
+        let dataToExport = [...state.filteredLogs]; 
         
         if (dataToExport.length === 0) return alert("No data to export!");
 
-        // 2. Zaman Akışını Garanti Altına Al (Kronolojik Sıralama)
-        // Logların oluşma zamanına (ts) göre sırala. _idx de kullanılabilir ama ts evrenseldir.
         dataToExport.sort((a, b) => new Date(a.ts) - new Date(b.ts));
 
-        // Dosya ismi için zaman damgası
         const timestamp = new Date().toISOString().replace(/:/g, '-').slice(0, -5);
         const nodeName = document.getElementById('node-name')?.innerText || 'local';
-        const fileNameBase = `panopticon_${trace || 'global'}_${nodeName}_${timestamp}`;
+        const levelPrefix = state.controls.levelFilter !== "ALL" ? `${state.controls.levelFilter}_` : "";
+        const fileNameBase = `panopticon_${levelPrefix}${state.controls.lockedTraceId || 'global'}_${nodeName}_${timestamp}`;
 
         if (type === 'raw') {
-            // --- RAW EXPORT (Kanıt Modu) ---
-            // Hiçbir filtreleme yapma. Sniffer paketleri dahil her şeyi indir.
             const blob = new Blob([JSON.stringify(dataToExport, null, 2)], { type: 'application/json' });
             this.downloadFile(blob, `${fileNameBase}_evidence.json`);
             
         } else if (type === 'ai') {
-            // --- AI REPORT (Akıl Modu) ---
-            // Sniffer paketlerini (RTP_PACKET) temizle. AI'ın bunlara ihtiyacı yok.
-            // Ama Media Service logları (RTP_QOS, SESSION_START) kalsın!
             const aiData = dataToExport.filter(l => l.event !== 'RTP_PACKET');
 
             const lines = aiData.map(l => {
-                // Mesajı temizle
                 let cleanMsg = l.message.replace(/(\r\n|\n|\r)/gm, " ");
                 if (cleanMsg.length > 200) cleanMsg = cleanMsg.substring(0, 200) + "...";
-                
                 return `[${l.ts.substring(11, 23)}] ${l.severity} | ${l.resource['service.name']} -> ${l.event}: ${cleanMsg}`;
             });
 
-            const report = `# Sentiric AI Context Report\nGenerated: ${new Date().toISOString()}\nNode: ${nodeName}\nTrace: ${trace || 'Global Stream'}\n\n## Timeline Summary\n\`\`\`log\n${lines.join('\n')}\n\`\`\`\n\n## Instructions for AI\nAnalyze the timeline above for anomalies, latency issues, or SIP protocol errors. Look specifically for 'WARN' or 'ERROR' levels.`;
+            const report = `# Sentiric AI Context Report\nGenerated: ${new Date().toISOString()}\nNode: ${nodeName}\nLevel Filter: ${state.controls.levelFilter}\n\n## Timeline Summary\n\`\`\`log\n${lines.join('\n')}\n\`\`\`\n\n## Instructions for AI\nAnalyze the timeline above for anomalies, latency issues, or SIP protocol errors. Look specifically for 'WARN' or 'ERROR' levels.`;
             
             const blob = new Blob([report], { type: 'text/markdown' });
             this.downloadFile(blob, `${fileNameBase}_report.md`);
         }
         
-        // Menüyü kapat
         if (this.el.dropdownContent) this.el.dropdownContent.style.display = 'none';
     }
 

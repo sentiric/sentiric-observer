@@ -1,10 +1,6 @@
-// src/ui/js/store.js
+// sentiric-observer/src/ui/js/store.js
 import { CONFIG } from './config.js';
 
-/**
- * SENTIRIC REACTIVE STORE v6.1
- * Fixed: Noise filter logic refined (Service Logs vs Raw Packets)
- */
 export const Store = {
     state: {
         rawLogs: [],         
@@ -20,9 +16,10 @@ export const Store = {
         controls: {
             lockedTraceId: null, 
             selectedLogIdx: null, 
-            hideRtpNoise: true, // Varsayılan: Gürültü Gizli
+            hideRtpNoise: true,
             globalSearch: "",
-            levelFilter: "ALL"
+            levelFilter: "ALL",
+            forceRender: false // [YENİ]: Ekranı zorla temizlemek için
         }
     },
 
@@ -61,21 +58,25 @@ export const Store = {
 
             case 'TOGGLE_NOISE':
                 this.state.controls.hideRtpNoise = !this.state.controls.hideRtpNoise;
+                this.state.controls.forceRender = true; // [FIX]: Ekranı temizle
                 shouldRender = this.applyFilters();
                 break;
 
             case 'SET_SEARCH':
                 this.state.controls.globalSearch = payload.toLowerCase();
+                this.state.controls.forceRender = true; // [FIX]
                 shouldRender = this.applyFilters();
                 break;
 
             case 'LOCK_TRACE':
                 this.state.controls.lockedTraceId = payload;
+                this.state.controls.forceRender = true; // [FIX]
                 shouldRender = this.applyFilters();
                 break;
 
             case 'UNLOCK_TRACE':
                 this.state.controls.lockedTraceId = null;
+                this.state.controls.forceRender = true; // [FIX]
                 shouldRender = this.applyFilters();
                 break;
 
@@ -90,6 +91,7 @@ export const Store = {
                 this.state.activeTraces.clear();
                 this.state.controls.lockedTraceId = null;
                 this.state.controls.selectedLogIdx = null;
+                this.state.controls.forceRender = true;
                 shouldRender = true;
                 break;
 
@@ -100,6 +102,7 @@ export const Store = {
             
             case 'SET_LEVEL': 
                 this.state.controls.levelFilter = payload;
+                this.state.controls.forceRender = true; // [FIX]
                 shouldRender = this.applyFilters();
                 break;
         }
@@ -127,7 +130,6 @@ export const Store = {
     },
 
     applyFilters() {
-        // v5.0 CHRONOS FIX: Zaman/Index sıralaması
         this.state.rawLogs.sort((a, b) => a._idx - b._idx);
         
         const { globalSearch, hideRtpNoise, lockedTraceId, levelFilter } = this.state.controls;
@@ -135,22 +137,15 @@ export const Store = {
         this.state.filteredLogs = this.state.rawLogs.filter(log => {
             const tid = log.trace_id || log.attributes?.['sip.call_id'];
             
-            // 1. TRACE LOCK (Odaklanma)
             if (lockedTraceId && tid !== lockedTraceId) return false;
             
-            // 2. NOISE FILTER (Gürültü Filtresi) - KRİTİK DÜZELTME BURADA
-            // Eskiden 'RTP' etiketi olan her şeyi siliyorduk (Media Service dahil).
-            // Şimdi sadece Sniffer'dan gelen ham paketleri (RTP_PACKET) siliyoruz.
-            // DTMF olayları (event 101) veya Media Service INFO logları korunur.
             if (!lockedTraceId && hideRtpNoise) {
                 if (log.event === "RTP_PACKET") return false;
             }
             
-            // 3. LEVEL FILTER
             if (levelFilter === "WARN" && log.severity !== "WARN" && log.severity !== "ERROR" && log.severity !== "FATAL") return false;
             if (levelFilter === "ERROR" && log.severity !== "ERROR" && log.severity !== "FATAL") return false;
             
-            // 4. GLOBAL SEARCH
             if (globalSearch) {
                 const searchableString = JSON.stringify(log).toLowerCase();
                 if (!searchableString.includes(globalSearch)) return false;

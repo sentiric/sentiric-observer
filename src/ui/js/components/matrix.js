@@ -1,3 +1,4 @@
+// sentiric-observer/src/ui/js/components/matrix.js
 import { Store } from '../store.js';
 
 export class MatrixComponent {
@@ -7,7 +8,7 @@ export class MatrixComponent {
         
         this.lastRenderedIdx = -1;
         this.selectionChanged = false;
-        this.shouldScroll = true; // Kendi scroll state'ini yönetir
+        this.shouldScroll = true; 
         
         this.el = {
             matrix: document.getElementById('matrix-content'),
@@ -20,14 +21,12 @@ export class MatrixComponent {
     bindEvents() {
         if (!this.el.matrix) return;
 
-        // Kullanıcı scroll yaparsa takibi bırak
         this.el.scroller?.addEventListener('scroll', () => {
             const el = this.el.scroller;
             const isAtBottom = Math.ceil(el.scrollTop + el.clientHeight) >= el.scrollHeight - 10;
             this.shouldScroll = isAtBottom;
         });
 
-        // Satıra tıklama
         this.el.matrix.addEventListener('click', (e) => {
             const row = e.target.closest('.log-row');
             if (row) {
@@ -36,11 +35,9 @@ export class MatrixComponent {
                 this.selectionChanged = true; 
                 this.shouldScroll = false; 
                 
-                // Sadece index gönderiyoruz, isLeftMenuOpen'e gerek kalmadı
                 this.inspector.open(idx);
             }
         });
-
     }
 
     escapeHtml(unsafe) {
@@ -50,6 +47,12 @@ export class MatrixComponent {
 
     render(state) {
         if (!this.el.matrix) return;
+
+        // [KRİTİK DÜZELTME]: Filtre değiştiyse ekranı baştan çiz
+        if (state.controls.forceRender) {
+            this.wipe();
+            state.controls.forceRender = false;
+        }
 
         const newLogs = state.filteredLogs.filter(l => l._idx > this.lastRenderedIdx);
         if (newLogs.length === 0 && !this.selectionChanged) return;
@@ -106,7 +109,6 @@ export class MatrixComponent {
         }
         this.selectionChanged = false;
 
-        // Auto Scroll
         if (!state.status.isPaused && this.shouldScroll && this.el.scroller) {
             this.el.scroller.scrollTop = this.el.scroller.scrollHeight;
         }
