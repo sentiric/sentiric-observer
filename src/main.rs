@@ -1,4 +1,4 @@
-// src/main.rs
+// Dosya: src/main.rs
 mod core;
 mod adapters;
 mod ports;
@@ -22,13 +22,16 @@ async fn main() -> anyhow::Result<()> {
     let cfg = AppConfig::load();
 
     // 2. Loglama Başlat
-    tracing_subscriber::fmt::init();
+    // [ARCH-COMPLIANCE] constraints.yaml: observability.logging_format (ZORUNLU JSON loglama)
+    if cfg.env == "production" || std::env::var("LOG_FORMAT").unwrap_or_default() == "json" {
+        tracing_subscriber::fmt().json().with_current_span(false).with_span_list(false).init();
+    } else {
+        tracing_subscriber::fmt::init();
+    }
     
     info!("👁️ SENTIRIC PANOPTICON v5.0 (Sovereign Edition) Başlatılıyor...");
     info!("🚀 Environment: {}", cfg.env);
     
-    // [TUNING]: Channel kapasitesini 50.000'e çıkardık. 
-    // Yüksek trafikli sunucularda (media-service) veri kaybını önler.
     let (ingest_tx, mut ingest_rx) = mpsc::channel::<LogRecord>(50000);
     let (ui_tx, _) = broadcast::channel::<LogRecord>(50000);
 
@@ -46,22 +49,15 @@ async fn main() -> anyhow::Result<()> {
         loop {
             tokio::select! {
                 Some(mut log) = ingest_rx.recv() => {
-                    // Indexing (Frontend Sorting için)
-
-                    // YENİ (rand kullanmadan saniyenin milyonda biri hassasiyetiyle uniq id üretir):
                     log._idx = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_micros() as f64 / 1000.0;
                     
-                    // Trace ID Injection
                     if log.trace_id.is_none() {
                         if let Some(call_id_val) = log.attributes.get("sip.call_id") {
                              if let Some(s) = call_id_val.as_str() { log.trace_id = Some(s.to_string()); }
                         }
                     }
 
-                    // [OPTIMIZATION]: Aggregator artık değer döndürmüyor, sadece state güncelliyor.
                     aggregator.process(&log);
-                    
-                    // İşlenen logu UI'a bas
                     let _ = aggregator_ui_tx.send(log);
                 }
                 _ = cleanup_interval.tick() => { aggregator.cleanup(); }
@@ -98,14 +94,42 @@ async fn main() -> anyhow::Result<()> {
         }
     });
     
-    // C. gRPC
+    // C. gRPC Server
     let grpc_tx = ingest_tx.clone();
     let grpc_addr = SocketAddr::from(([0, 0, 0, 0], cfg.grpc_port));
     tokio::spawn(async move {
         let state = api::grpc::GrpcServerState { tx: grpc_tx };
-        let server = tonic::transport::Server::builder()
+        
+        // [ARCH-COMPLIANCE] constraints.yaml: security.grpc_communication (mTLS Server Implementation)
+        let server_builder = match (
+            std::env::var("OBSERVER_SERVICE_CERT_PATH").ok(),
+            std::env::var("OBSERVER_SERVICE_KEY_PATH").ok(),
+            std::env::var("GRPC_TLS_CA_PATH").ok()
+        ) {
+            (Some(cert_path), Some(key_path), Some(ca_path)) => {
+                info!("🔒 gRPC Server: Enforcing mTLS Authentication.");
+                let cert = std::fs::read_to_string(cert_path).expect("Failed to read TLS Cert");
+                let key = std::fs::read_to_string(key_path).expect("Failed to read TLS Key");
+                let ca_cert = std::fs::read_to_string(ca_path).expect("Failed to read TLS CA");
+                
+                let identity = tonic::transport::Identity::from_pem(cert, key);
+                let client_ca = tonic::transport::Certificate::from_pem(ca_cert);
+                let tls_config = tonic::transport::ServerTlsConfig::new()
+                    .identity(identity)
+                    .client_ca_root(client_ca);
+
+                tonic::transport::Server::builder().tls_config(tls_config).expect("TLS Config failed")
+            },
+            _ => {
+                tracing::warn!("⚠️ gRPC Server: Running without mTLS. Architectural violation in production.");
+                tonic::transport::Server::builder()
+            }
+        };
+
+        let server = server_builder
             .add_service(api::grpc::observer_proto::observer_service_server::ObserverServiceServer::new(state))
             .serve(grpc_addr);
+            
         if let Err(e) = server.await {
             error!("gRPC Server Error: {}", e);
         }
@@ -119,7 +143,7 @@ async fn main() -> anyhow::Result<()> {
         export_manager.register_emitter(Arc::new(adapters::grpc_client::GrpcEmitter::new(upstream_url)));
         
         let mut rx_export = ui_tx.subscribe();
-        let (bridge_tx, bridge_rx) = mpsc::channel(20000); // Export kanalı da genişletildi
+        let (bridge_tx, bridge_rx) = mpsc::channel(20000); 
         
         tokio::spawn(async move {
             while let Ok(log) = rx_export.recv().await {
