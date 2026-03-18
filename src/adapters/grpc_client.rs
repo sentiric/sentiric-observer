@@ -15,13 +15,19 @@ use crate::api::grpc::observer_proto::IngestLogRequest;
 pub struct GrpcEmitter {
     client: Arc<RwLock<Option<ObserverServiceClient<Channel>>>>,
     target_url: String,
+    tls_cert_path: Option<String>,
+    tls_key_path: Option<String>,
+    tls_ca_path: Option<String>,
 }
 
 impl GrpcEmitter {
-    pub fn new(url: String) -> Self {
+    pub fn new(url: String, tls_cert_path: Option<String>, tls_key_path: Option<String>, tls_ca_path: Option<String>) -> Self {
         Self {
             client: Arc::new(RwLock::new(None)),
             target_url: url,
+            tls_cert_path,
+            tls_key_path,
+            tls_ca_path,
         }
     }
 
@@ -36,11 +42,10 @@ impl GrpcEmitter {
 
         info!("🔌 Connecting to Upstream Observer: {}", self.target_url);
         
-        // [ARCH-COMPLIANCE] constraints.yaml: security.grpc_communication (mTLS Client Implementation)
         let endpoint = match (
-            std::env::var("OBSERVER_SERVICE_CERT_PATH").ok(),
-            std::env::var("OBSERVER_SERVICE_KEY_PATH").ok(),
-            std::env::var("GRPC_TLS_CA_PATH").ok()            
+            self.tls_cert_path.as_ref(),
+            self.tls_key_path.as_ref(),
+            self.tls_ca_path.as_ref()
         ) {
             (Some(cert_path), Some(key_path), Some(ca_path)) => {
                 info!("🔒 gRPC Client: Utilizing mTLS for upstream connection.");

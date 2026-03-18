@@ -22,7 +22,6 @@ async fn main() -> anyhow::Result<()> {
     let cfg = AppConfig::load();
 
     // 2. Loglama Başlat
-    // [ARCH-COMPLIANCE] constraints.yaml: observability.logging_format (ZORUNLU JSON loglama)
     if cfg.env == "production" || std::env::var("LOG_FORMAT").unwrap_or_default() == "json" {
         tracing_subscriber::fmt().json().with_current_span(false).with_span_list(false).init();
     } else {
@@ -97,15 +96,17 @@ async fn main() -> anyhow::Result<()> {
     // C. gRPC Server
     let grpc_tx = ingest_tx.clone();
     let grpc_addr = SocketAddr::from(([0, 0, 0, 0], cfg.grpc_port));
+    
+    // Config nesnesinden certifikaları alıyoruz (Clone yapıyoruz ki scope'a taşınsın)
+    let tls_cert = cfg.tls_cert_path.clone();
+    let tls_key = cfg.tls_key_path.clone();
+    let tls_ca = cfg.tls_ca_path.clone();
+
     tokio::spawn(async move {
         let state = api::grpc::GrpcServerState { tx: grpc_tx };
         
-        // [ARCH-COMPLIANCE] constraints.yaml: security.grpc_communication (mTLS Server Implementation)
-        let server_builder = match (
-            std::env::var("OBSERVER_SERVICE_CERT_PATH").ok(),
-            std::env::var("OBSERVER_SERVICE_KEY_PATH").ok(),
-            std::env::var("GRPC_TLS_CA_PATH").ok()
-        ) {
+        // [FIX]: `mut` anahtar kelimesi eklendi! (E0596 Hatası Çözümü)
+        let mut server_builder = match (tls_cert, tls_key, tls_ca) {
             (Some(cert_path), Some(key_path), Some(ca_path)) => {
                 info!("🔒 gRPC Server: Enforcing mTLS Authentication.");
                 let cert = std::fs::read_to_string(cert_path).expect("Failed to read TLS Cert");
@@ -136,11 +137,17 @@ async fn main() -> anyhow::Result<()> {
     });
 
     // --- 5. UPSTREAM EXPORT ---
-    let upstream_url = std::env::var("UPSTREAM_OBSERVER_URL").unwrap_or_default();
-    if !upstream_url.is_empty() {
-        info!("🚀 OMNISCIENT MODE: Upstream -> {}", upstream_url);
+    if !cfg.upstream_url.is_empty() {
+        info!("🚀 OMNISCIENT MODE: Upstream -> {}", cfg.upstream_url);
         let mut export_manager = adapters::exporter::ExportManager::new(50, 2);
-        export_manager.register_emitter(Arc::new(adapters::grpc_client::GrpcEmitter::new(upstream_url)));
+        
+        // Upstream bağlanırken de Config üzerindeki TLS path'lerini Client'a veriyoruz
+        export_manager.register_emitter(Arc::new(adapters::grpc_client::GrpcEmitter::new(
+            cfg.upstream_url.clone(),
+            cfg.tls_cert_path.clone(),
+            cfg.tls_key_path.clone(),
+            cfg.tls_ca_path.clone(),
+        )));
         
         let mut rx_export = ui_tx.subscribe();
         let (bridge_tx, bridge_rx) = mpsc::channel(20000); 
