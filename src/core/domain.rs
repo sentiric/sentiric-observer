@@ -18,7 +18,6 @@ pub struct LogRecord {
     #[serde(default = "default_severity")]
     pub severity: String,
 
-    #[serde(default = "default_tenant")]
     pub tenant_id: String,
 
     #[serde(default)]
@@ -36,15 +35,12 @@ pub struct LogRecord {
     #[serde(default)]
     pub message: String,
 
-    // [OPTIMIZATION]: HashMap varsayılan olarak boş gelir, allocation'ı geciktirir.
     #[serde(default)]
     pub attributes: HashMap<String, Value>,
 
-    // UI tarafında renklendirme ve filtreleme için kullanılır
     #[serde(default, skip_deserializing)]
     pub smart_tags: Vec<String>,
     
-    // Frontend'de benzersizlik ve sıralama için (Backend tarafından üretilir)
     #[serde(default, skip_deserializing)]
     pub _idx: f64,
 }
@@ -64,10 +60,8 @@ pub struct ResourceContext {
     pub host_name: Option<String>,
 }
 
-// --- Defaults (Allocation Maliyetini Düşürmek İçin Statik Referanslar) ---
 fn default_schema() -> String { "1.0.0".to_string() }
 fn default_severity() -> String { "INFO".to_string() }
-fn default_tenant() -> String { "default".to_string() }
 fn default_event() -> String { "LOG_EVENT".to_string() }
 fn default_unknown() -> String { "unknown".to_string() }
 fn default_prod() -> String { "production".to_string() }
@@ -85,12 +79,12 @@ impl Default for ResourceContext {
 }
 
 impl LogRecord {
-    pub fn new_system(level: &str, event: &str, msg: &str) -> Self {
+    pub fn new_system(level: &str, event: &str, msg: &str, tenant_id: &str) -> Self {
         Self {
             schema_v: "1.0.0".to_string(),
             ts: chrono::Utc::now().to_rfc3339(),
             severity: level.to_string(),
-            tenant_id: "system".to_string(),
+            tenant_id: tenant_id.to_string(), // [ARCH-COMPLIANCE] Dinamik tenant
             resource: ResourceContext {
                 service_name: "sentiric-observer".to_string(),
                 service_version: env!("CARGO_PKG_VERSION").to_string(),
@@ -103,13 +97,11 @@ impl LogRecord {
             message: msg.to_string(),
             attributes: HashMap::new(),
             smart_tags: vec!["SYS".to_string()],
-            _idx: 0.0, // Ingest anında atanacak
+            _idx: 0.0, 
         }
     }
 
-    /// Log içeriğini zenginleştirir ve eksik alanları doldurur.
     pub fn sanitize_and_enrich(&mut self) {
-        // 1. Message alanı JSON ise onu da parse edip attributes'a göm
         if self.message.trim().starts_with('{') {
             if let Ok(parsed) = serde_json::from_str::<HashMap<String, Value>>(&self.message) {
                 for (k, v) in parsed {
@@ -122,9 +114,8 @@ impl LogRecord {
             }
         }
 
-        // 2. Trace ID Kurtarma (Call-ID varsa Trace ID yap)
         if self.trace_id.is_none() {
-            let candidates = ["sip.call_id", "call_id", "Call-ID", "callid"];
+            let candidates =["sip.call_id", "call_id", "Call-ID", "callid"];
             for key in candidates {
                 if let Some(val) = self.attributes.get(key).and_then(|v| v.as_str()) {
                     if !val.is_empty() && val != "null" {
@@ -135,7 +126,6 @@ impl LogRecord {
             }
         }
 
-        // 3. Smart Tagging (Otomatik Etiketleme)
         let svc = self.resource.service_name.to_lowercase();
         let msg_lower = self.message.to_lowercase();
 

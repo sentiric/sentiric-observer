@@ -11,7 +11,7 @@ use tracing::{error, info, debug};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use lru::LruCache; // [YENİ]
+use lru::LruCache; 
 use std::num::NonZeroUsize;
 
 pub struct NetworkSniffer {
@@ -20,10 +20,11 @@ pub struct NetworkSniffer {
     tx: Sender<LogRecord>,
     node_name: String,
     active_flag: Arc<AtomicBool>,
+    tenant_id: String, // [ARCH-COMPLIANCE] Dinamik tenant
 }
 
 impl NetworkSniffer {
-    pub fn new(interface: &str, filter: &str, tx: Sender<LogRecord>, node_name: String, active_flag: Arc<AtomicBool>) -> Self {
+    pub fn new(interface: &str, filter: &str, tx: Sender<LogRecord>, node_name: String, active_flag: Arc<AtomicBool>, tenant_id: String) -> Self {
         let safe_filter = if filter.trim() == "any" || filter.trim().is_empty() {
             "".to_string()
         } else {
@@ -35,17 +36,12 @@ impl NetworkSniffer {
             filter: safe_filter, 
             tx, 
             node_name, 
-            active_flag 
+            active_flag,
+            tenant_id
         }
     }
 
-    // ... (parse_headers ve process_payload fonksiyonları aynı kalacak - kısalttım) ...
-    // Sadece build_log içindeki _idx: 0.0 detayına dikkat et
-    
     fn parse_headers(packet: &pcap::Packet, link_type: Linktype) -> Option<Vec<u8>> {
-        // [MEVCUT KOD AYNEN KORUNACAK]
-        // Kodu buraya tekrar yapıştırırsan dosya çok uzar,
-        // Önceki implementasyondaki parse_headers'ı buraya al.
         let data = packet.data;
         let offset = match link_type {
             Linktype::ETHERNET => {
@@ -72,23 +68,21 @@ impl NetworkSniffer {
     }
 
     fn process_payload(&self, payload: &[u8], original_len: u32) -> Option<LogRecord> {
-            if let Ok(data_str) = std::str::from_utf8(payload) {
-                if data_str.contains("SIP/2.0") {
-                    return self.create_sip_log(data_str, original_len);
-                }
+        if let Ok(data_str) = std::str::from_utf8(payload) {
+            if data_str.contains("SIP/2.0") {
+                return self.create_sip_log(data_str, original_len);
             }
-            if payload.len() > 12 && (payload[0] & 0xC0) == 0x80 {
-                let pt = payload[1] & 0x7F;
-                if pt == 0 || pt == 8 || pt == 18 || pt == 101 || (pt >= 96 && pt <= 127) {
-                    // DÜZELTME: payload'ın kendisini de fonksiyona gönderiyoruz
-                    return self.create_rtp_log(pt, original_len, payload);
-                }
-            }
-            None
         }
+        if payload.len() > 12 && (payload[0] & 0xC0) == 0x80 {
+            let pt = payload[1] & 0x7F;
+            if pt == 0 || pt == 8 || pt == 18 || pt == 101 || (pt >= 96 && pt <= 127) {
+                return self.create_rtp_log(pt, original_len, payload);
+            }
+        }
+        None
+    }
 
     fn create_sip_log(&self, data: &str, len: u32) -> Option<LogRecord> {
-        // [AYNI KALACAK]
         let first_word = data.split_whitespace().next().unwrap_or("UNKNOWN");
         let method = if first_word == "SIP/2.0" {
             let status_code = data.split_whitespace().nth(1).unwrap_or("000");
@@ -114,17 +108,14 @@ impl NetworkSniffer {
         Some(log)
     }
 
-// DÜZELTME: payload parametresi eklendi
     fn create_rtp_log(&self, pt: u8, len: u32, payload: &[u8]) -> Option<LogRecord> {
         let mut attributes = HashMap::new();
         attributes.insert("net.packet_len".to_string(), Value::from(len));
         attributes.insert("rtp.payload_type".to_string(), Value::from(pt));
         attributes.insert("net.interface".to_string(), Value::String(self.interface.clone()));
         
-        // YENİ: RTP Ses Verisini (Payload) Base64 olarak paketle (Sadece G.711 PCMA/PCMU için - PT 8 ve PT 0)
-        // RTP Header standart 12 byte'tır. Kalan kısım sestir.
         if (pt == 8 || pt == 0) && payload.len() > 12 {
-            let rtp_payload = &payload[12..]; // 12. byte'tan sonrasını al (Ses verisi)
+            let rtp_payload = &payload[12..]; 
             use base64::{Engine as _, engine::general_purpose::STANDARD};
             let b64_audio = STANDARD.encode(rtp_payload);
             attributes.insert("rtp.audio_b64".to_string(), Value::String(b64_audio));
@@ -147,7 +138,7 @@ impl NetworkSniffer {
             schema_v: "1.0.0".to_string(), 
             ts: chrono::Utc::now().to_rfc3339(), 
             severity: "INFO".to_string(),
-            tenant_id: "default".to_string(),
+            tenant_id: self.tenant_id.clone(), // [ARCH-COMPLIANCE]
             resource: ResourceContext {
                 service_name: "network-sniffer".to_string(), 
                 service_version: "4.1.0".to_string(),
@@ -164,7 +155,7 @@ impl NetworkSniffer {
 #[async_trait]
 impl LogIngestor for NetworkSniffer {
     async fn start(&self) -> Result<()> {
-        info!("🕸️ Sniffer: Başlatılıyor. Arayüz: {}", self.interface);
+        info!(event="SNIFFER_START", interface=%self.interface, "🕸️ Sniffer: Başlatılıyor.");
         
         let device_name = if self.interface == "any" { 
             "any".to_string() 
@@ -185,7 +176,7 @@ impl LogIngestor for NetworkSniffer {
 
         if !self.filter.is_empty() {
             if let Err(e) = cap.filter(&self.filter, true) {
-                error!("BPF Filtre Hatası: {}", e);
+                error!(event="BPF_FILTER_ERR", error=%e, "BPF Filtre Hatası");
                 return Err(anyhow::anyhow!("BPF Filter Error"));
             }
         }
@@ -198,15 +189,13 @@ impl LogIngestor for NetworkSniffer {
             filter: self.filter.clone(),
             tx: self.tx.clone(), 
             node_name: self.node_name.clone(), 
-            active_flag: self.active_flag.clone()
+            active_flag: self.active_flag.clone(),
+            tenant_id: self.tenant_id.clone()
         };
 
         std::thread::spawn(move || {
             let mut dropped_packets = 0;
             let mut last_drop_report = std::time::Instant::now();
-            
-            // [OPTIMIZATION]: LRU Cache ile O(1) Deduplication
-            // Son 1000 paketin imzasını tutuyoruz.
             let mut seen_packets = LruCache::new(NonZeroUsize::new(1000).unwrap());
 
             loop {
@@ -217,7 +206,6 @@ impl LogIngestor for NetworkSniffer {
 
                 match cap.next_packet() {
                     Ok(packet) => {
-                        // 1. DEDUPLICATION (LruCache)
                         let ts_sec = packet.header.ts.tv_sec as u64;
                         let len = packet.header.len;
                         let payload_sig = if packet.data.len() > 20 {
@@ -227,12 +215,8 @@ impl LogIngestor for NetworkSniffer {
 
                         let fingerprint = (ts_sec, len, payload_sig);
                         
-                        // Eğer paketi daha önce gördüysek atla
-                        if seen_packets.put(fingerprint, ()).is_some() {
-                            continue;
-                        }
+                        if seen_packets.put(fingerprint, ()).is_some() { continue; }
 
-                        // 2. PARSE VE GÖNDERİM
                         if let Some(payload) = Self::parse_headers(&packet, link_type) {
                             if let Some(log) = parser_logic.process_payload(&payload, packet.header.len) {
                                 if let Err(tokio::sync::mpsc::error::TrySendError::Full(_)) = tx_clone.try_send(log) {
@@ -243,13 +227,13 @@ impl LogIngestor for NetworkSniffer {
                     },
                     Err(pcap::Error::TimeoutExpired) => {}, 
                     Err(e) => {
-                        error!("Sniffer Hatası: {:?}", e);
+                        error!(event="PCAP_ERROR", error=?e, "Sniffer Hatası");
                         std::thread::sleep(Duration::from_secs(2));
                     }
                 }
 
                 if dropped_packets > 0 && last_drop_report.elapsed() > Duration::from_secs(1) {
-                    debug!("⚠️ Sniffer Buffer Dolu: {} paket işlenemedi.", dropped_packets);
+                    debug!(event="SNIFFER_BUFFER_FULL", dropped=%dropped_packets, "⚠️ Sniffer Buffer Dolu.");
                     dropped_packets = 0;
                     last_drop_report = std::time::Instant::now();
                 }

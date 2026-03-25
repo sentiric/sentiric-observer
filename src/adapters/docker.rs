@@ -19,26 +19,23 @@ pub struct DockerIngestor {
     tx: Sender<LogRecord>,
     node_name: String,
     monitored_containers: Arc<Mutex<HashMap<String, String>>>,
+    tenant_id: String, // [ARCH-COMPLIANCE]
 }
 
 impl DockerIngestor {
-    pub fn new(socket_path: &str, tx: Sender<LogRecord>, node_name: String) -> Result<Self> {
+    pub fn new(socket_path: &str, tx: Sender<LogRecord>, node_name: String, tenant_id: String) -> Result<Self> {
         let docker = Docker::connect_with_unix(socket_path, 120, bollard::API_DEFAULT_VERSION)
             .or_else(|_| Docker::connect_with_local_defaults())
             .map_err(|e| anyhow::anyhow!("Docker Connect Fail: {}", e))?;
-        Ok(Self { docker, tx, node_name, monitored_containers: Arc::new(Mutex::new(HashMap::new())) })
+        Ok(Self { docker, tx, node_name, monitored_containers: Arc::new(Mutex::new(HashMap::new())), tenant_id })
     }
 
-    // [ROBUSTNESS FIX]: JSON parse hatası olduğunda veriyi atmak yerine RAW olarak sarmalıyoruz.
     fn process_line(&self, line: String, container_name: &str, stream_type: &str) -> LogRecord {
         let cleaned_line = parser::clean_ansi(&line);
 
-        // 1. Önce Generic JSON olarak parse etmeyi dene (En hızlı yöntem)
         match serde_json::from_str::<Value>(&cleaned_line) {
             Ok(json_val) => {
-                // Eğer bir obje ise (Array veya String değil)
                 if let Some(map) = json_val.as_object() {
-                    // SUTS uyumlu alanları çekmeye çalış
                     let schema = map.get("schema_v").and_then(Value::as_str).unwrap_or("1.0.0");
                     let severity = map.get("severity")
                         .or_else(|| map.get("level"))
@@ -62,16 +59,12 @@ impl DockerIngestor {
                     let trace_id = map.get("trace_id").and_then(Value::as_str).map(|s| s.to_string());
                     let event = map.get("event").and_then(Value::as_str).unwrap_or("LOG_EVENT").to_string();
 
-                    // Attributes ayıkla
                     let mut attributes = HashMap::new();
-                    // Orijinal "attributes" alanı varsa onu al
                     if let Some(attrs) = map.get("attributes").and_then(Value::as_object) {
                         for (k, v) in attrs {
                             attributes.insert(k.clone(), v.clone());
                         }
-                    } 
-                    // Yoksa kök dizindeki diğer alanları attribute yap (User-Service, Media-Service uyumu)
-                    else {
+                    } else {
                         for (k, v) in map {
                             if !["schema_v", "severity", "level", "message", "msg", "ts", "time", "trace_id", "event", "resource"].contains(&k.as_str()) {
                                 attributes.insert(k.clone(), v.clone());
@@ -79,7 +72,6 @@ impl DockerIngestor {
                         }
                     }
 
-                    // Resource Context'i koru veya varsayılanı kullan
                     let resource = if let Some(r) = map.get("resource").and_then(Value::as_object) {
                         ResourceContext {
                             service_name: r.get("service.name").and_then(Value::as_str).unwrap_or(container_name).to_string(),
@@ -100,7 +92,7 @@ impl DockerIngestor {
                         schema_v: schema.to_string(),
                         ts: if ts.is_empty() { chrono::Utc::now().to_rfc3339() } else { ts },
                         severity,
-                        tenant_id: "default".to_string(),
+                        tenant_id: self.tenant_id.clone(), //[ARCH-COMPLIANCE] Dinamik tenant enjeksiyonu
                         resource,
                         trace_id,
                         span_id: None,
@@ -108,25 +100,21 @@ impl DockerIngestor {
                         message: msg,
                         attributes,
                         smart_tags: vec![],
-                        _idx: 0.0, // Aggregator veya Main loop bunu dolduracak
+                        _idx: 0.0, 
                     };
                     
                     record.sanitize_and_enrich();
                     return record;
                 }
             }
-            Err(_) => {
-                // JSON Parse edilemedi -> RAW TEXT Log
-                // Media Service bazen bozuk JSON veya düz text basabilir, bunu kaçırmamalıyız.
-            }
+            Err(_) => {}
         }
 
-        // Fallback: Raw Log Record
         let mut raw_record = LogRecord {
             schema_v: "1.0.0".to_string(),
             ts: chrono::Utc::now().to_rfc3339(),
             severity: if stream_type == "stderr" { "ERROR".to_string() } else { "INFO".to_string() },
-            tenant_id: "default".to_string(),
+            tenant_id: self.tenant_id.clone(), // [ARCH-COMPLIANCE] Dinamik tenant enjeksiyonu
             resource: ResourceContext {
                 service_name: container_name.to_string(),
                 service_version: "unknown".to_string(),
@@ -149,9 +137,8 @@ impl DockerIngestor {
 #[async_trait]
 impl LogIngestor for DockerIngestor {
     async fn start(&self) -> Result<()> {
-        info!("🐳 Docker Ingestor: Başlatıldı (Node: {})", self.node_name);
+        info!(event="DOCKER_INGESTOR_START", node=%self.node_name, "🐳 Docker Ingestor: Başlatıldı");
         
-        // Başlangıç zamanı
         let mut last_scan_time = chrono::Utc::now().timestamp();
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(5));
 
@@ -165,26 +152,24 @@ impl LogIngestor for DockerIngestor {
                     let mut monitored = self.monitored_containers.lock().await;
                     for container in containers {
                         let id = container.id.unwrap_or_default();
-                        // Container ismini düzelt (/sbc-service -> sbc-service)
                         let name = container.names.as_ref()
                             .and_then(|names| names.first())
                             .map(|s| s.trim_start_matches('/').to_string())
                             .unwrap_or_else(|| "unknown".to_string());
                         
-                        // Observer kendini izlemesin (Loop prevention)
                         if name.contains("observer") { continue; }
                         
                         if !monitored.contains_key(&id) && !id.is_empty() {
-                            info!("✨ Yeni Hedef Kilitlendi: {} (ID: {:.8})", name, id);
+                            info!(event="TARGET_LOCKED", container=%name, "✨ Yeni Hedef Kilitlendi");
                             monitored.insert(id.clone(), name.clone());
                             
-                            // Clone'lar (Tokio task için)
                             let docker = self.docker.clone(); 
                             let tx = self.tx.clone();
                             let node = self.node_name.clone(); 
                             let monitored_map = self.monitored_containers.clone();
                             let container_id = id.clone(); 
                             let container_name = name.clone();
+                            let tenant_clone = self.tenant_id.clone();
                             let since = last_scan_time;
 
                             tokio::spawn(async move {
@@ -193,7 +178,7 @@ impl LogIngestor for DockerIngestor {
                                     stdout: true, 
                                     stderr: true, 
                                     since: since, 
-                                    timestamps: false, // Timestamp'i Docker'dan değil logun içinden alacağız
+                                    timestamps: false, 
                                     ..Default::default() 
                                 };
                                 
@@ -202,7 +187,8 @@ impl LogIngestor for DockerIngestor {
                                     docker: docker.clone(), 
                                     tx: tx.clone(), 
                                     node_name: node.clone(), 
-                                    monitored_containers: monitored_map.clone() 
+                                    monitored_containers: monitored_map.clone(),
+                                    tenant_id: tenant_clone
                                 };
 
                                 while let Some(log_result) = stream.next().await {
@@ -214,37 +200,30 @@ impl LogIngestor for DockerIngestor {
                                                 _ => (bytes::Bytes::new(), "unknown"),
                                             };
                                             
-                                            // Lossy conversion (Bozuk karakterler patlatmasın)
                                             let text = String::from_utf8_lossy(&msg).trim().to_string();
                                             if !text.is_empty() {
                                                 let record = ingestor.process_line(text, &container_name, stream_type);
                                                 
-                                                // [CRITICAL]: Channel doluysa bekleme, drop et ve uyar (Backpressure)
-                                                // try_send kullanmıyoruz çünkü buffer dolu diye veri kaybetmek istemiyoruz,
-                                                // ancak sistem çok sıkışırsa send().await bloklar.
-                                                // Burası "Ürün Kararı" gerektirir: Hız mı, Veri Bütünlüğü mü?
-                                                // Panopticon "Forensics" aracı olduğu için veri bütünlüğü önemli -> await.
                                                 if let Err(_) = tx.send(record).await {
-                                                    // Kanal kapandıysa (Main process öldüyse)
                                                     break;
                                                 }
                                             }
                                         }
                                         Err(e) => { 
-                                            warn!("Stream Hatası ({}): {}", container_name, e); 
+                                            warn!(event="DOCKER_STREAM_ERR", container=%container_name, error=%e, "Stream Hatası"); 
                                             break; 
                                         }
                                     }
                                 }
                                 
-                                warn!("💀 Bağlantı Koptu: {}", container_name);
+                                warn!(event="TARGET_LOST", container=%container_name, "💀 Bağlantı Koptu");
                                 let mut m = monitored_map.lock().await;
                                 m.remove(&container_id);
                             });
                         }
                     }
                 }
-                Err(e) => error!("Docker API Hatası: {}", e),
+                Err(e) => error!(event="DOCKER_API_ERR", error=%e, "Docker API Hatası"),
             }
             last_scan_time = current_scan_time;
         }

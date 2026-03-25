@@ -28,8 +28,8 @@ async fn main() -> anyhow::Result<()> {
         tracing_subscriber::fmt::init();
     }
     
-    info!("👁️ SENTIRIC PANOPTICON v5.0 (Sovereign Edition) Başlatılıyor...");
-    info!("🚀 Environment: {}", cfg.env);
+    //[ARCH-COMPLIANCE] Event zorunluluğu
+    info!(event="PANOPTICON_STARTUP", version="v5.0", profile=%cfg.env, "👁️ SENTIRIC PANOPTICON v5.0 (Sovereign Edition) Başlatılıyor...");
     
     let (ingest_tx, mut ingest_rx) = mpsc::channel::<LogRecord>(50000);
     let (ui_tx, _) = broadcast::channel::<LogRecord>(50000);
@@ -65,6 +65,7 @@ async fn main() -> anyhow::Result<()> {
     });
 
     let node_name = hostname::get().map(|h| h.to_string_lossy().into_owned()).unwrap_or("unknown".into());
+    let global_tenant_id = cfg.tenant_id.clone();
 
     // --- 4. INGESTION ADAPTERS ---
 
@@ -74,12 +75,13 @@ async fn main() -> anyhow::Result<()> {
     let interface = cfg.sniffer_interface.clone();
     let filter = cfg.sniffer_filter.clone();
     let sniffer_node = node_name.clone();
+    let sniffer_tenant = global_tenant_id.clone();
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     tokio::spawn(async move {
-        let sniffer = adapters::sniffer::NetworkSniffer::new(&interface, &filter, sniffer_tx, sniffer_node, sniffer_flag);
+        let sniffer = adapters::sniffer::NetworkSniffer::new(&interface, &filter, sniffer_tx, sniffer_node, sniffer_flag, sniffer_tenant);
         if let Err(e) = sniffer.start().await {
-            error!("Sniffer Başlatılamadı: {}", e);
+            error!(event="SNIFFER_START_FAIL", error=%e, "Sniffer Başlatılamadı");
         }
     });
 
@@ -87,8 +89,10 @@ async fn main() -> anyhow::Result<()> {
     let docker_tx = ingest_tx.clone();
     let docker_socket = cfg.docker_socket.clone();
     let node_clone = node_name.clone();
+    let docker_tenant = global_tenant_id.clone();
+
     tokio::spawn(async move {
-        if let Ok(ingestor) = adapters::docker::DockerIngestor::new(&docker_socket, docker_tx, node_clone) {
+        if let Ok(ingestor) = adapters::docker::DockerIngestor::new(&docker_socket, docker_tx, node_clone, docker_tenant) {
             let _ = ingestor.start().await;
         }
     });
@@ -97,18 +101,18 @@ async fn main() -> anyhow::Result<()> {
     let grpc_tx = ingest_tx.clone();
     let grpc_addr = SocketAddr::from(([0, 0, 0, 0], cfg.grpc_port));
     
-    // Config nesnesinden certifikaları alıyoruz (Clone yapıyoruz ki scope'a taşınsın)
     let tls_cert = cfg.tls_cert_path.clone();
     let tls_key = cfg.tls_key_path.clone();
     let tls_ca = cfg.tls_ca_path.clone();
+    let grpc_tenant = global_tenant_id.clone();
 
     tokio::spawn(async move {
-        let state = api::grpc::GrpcServerState { tx: grpc_tx };
+        let state = api::grpc::GrpcServerState { tx: grpc_tx, tenant_id: grpc_tenant };
         
-        // [FIX]: `mut` anahtar kelimesi eklendi! (E0596 Hatası Çözümü)
+        // [ARCH-COMPLIANCE] mTLS Failure Policy: Silent degradation YASAKTIR. Bail fırlatılır.
         let mut server_builder = match (tls_cert, tls_key, tls_ca) {
             (Some(cert_path), Some(key_path), Some(ca_path)) => {
-                info!("🔒 gRPC Server: Enforcing mTLS Authentication.");
+                info!(event="GRPC_MTLS_ACTIVE", "🔒 gRPC Server: Enforcing mTLS Authentication.");
                 let cert = std::fs::read_to_string(cert_path).expect("Failed to read TLS Cert");
                 let key = std::fs::read_to_string(key_path).expect("Failed to read TLS Key");
                 let ca_cert = std::fs::read_to_string(ca_path).expect("Failed to read TLS CA");
@@ -122,8 +126,8 @@ async fn main() -> anyhow::Result<()> {
                 tonic::transport::Server::builder().tls_config(tls_config).expect("TLS Config failed")
             },
             _ => {
-                tracing::warn!("⚠️ gRPC Server: Running without mTLS. Architectural violation in production.");
-                tonic::transport::Server::builder()
+                error!(event="MTLS_CONFIG_MISSING", "mTLS sertifikaları eksik. Servis çökecektir.");
+                panic!("[ARCH-COMPLIANCE] mTLS sertifikaları zorunludur. Güvensiz sunucu başlatılamaz.");
             }
         };
 
@@ -132,16 +136,15 @@ async fn main() -> anyhow::Result<()> {
             .serve(grpc_addr);
             
         if let Err(e) = server.await {
-            error!("gRPC Server Error: {}", e);
+            error!(event="GRPC_SERVER_ERROR", error=%e, "gRPC Server Error");
         }
     });
 
     // --- 5. UPSTREAM EXPORT ---
     if !cfg.upstream_url.is_empty() {
-        info!("🚀 OMNISCIENT MODE: Upstream -> {}", cfg.upstream_url);
+        info!(event="UPSTREAM_MODE_ACTIVE", url=%cfg.upstream_url, "🚀 OMNISCIENT MODE: Upstream aktif");
         let mut export_manager = adapters::exporter::ExportManager::new(50, 2);
         
-        // Upstream bağlanırken de Config üzerindeki TLS path'lerini Client'a veriyoruz
         export_manager.register_emitter(Arc::new(adapters::grpc_client::GrpcEmitter::new(
             cfg.upstream_url.clone(),
             cfg.tls_cert_path.clone(),
@@ -173,7 +176,7 @@ async fn main() -> anyhow::Result<()> {
     let app = api::routes::create_router(app_state);
     let http_addr = SocketAddr::from(([0, 0, 0, 0], cfg.http_port));
     
-    info!("✅ Sistem Hazır. UI: http://{}:{}", cfg.host, cfg.http_port);
+    info!(event="SYSTEM_READY", url=%cfg.host, port=cfg.http_port, "✅ Sistem Hazır.");
     let listener = tokio::net::TcpListener::bind(http_addr).await?;
     axum::serve(listener, app).await?;
 

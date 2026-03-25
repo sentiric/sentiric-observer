@@ -26,10 +26,19 @@ pub struct AppConfig {
     pub tls_key_path: Option<String>,
     pub tls_ca_path: Option<String>,
     pub upstream_url: String,
+
+    // [ARCH-COMPLIANCE] Tenant ID
+    pub tenant_id: String,
 }
 
 impl AppConfig {
     pub fn load() -> Self {
+        // [ARCH-COMPLIANCE] Tenant ID doğrulaması
+        let tenant_id = env::var("TENANT_ID").unwrap_or_default();
+        if tenant_id.trim().is_empty() {
+            panic!("[ARCH-COMPLIANCE] TENANT_ID ortam değişkeni ZORUNLUDUR ve boş olamaz. Servis başlatılamaz.");
+        }
+
         Self {
             env: env::var("ENV").unwrap_or_else(|_| "development".into()),
             host: env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string()),
@@ -50,12 +59,13 @@ impl AppConfig {
             max_active_sessions: env::var("MAX_ACTIVE_SESSIONS").unwrap_or("10000".to_string()).parse().unwrap_or(10000),
             session_ttl_seconds: env::var("SESSION_TTL_SECONDS").unwrap_or("300".to_string()).parse().unwrap_or(300),
 
-            // [ARCH-COMPLIANCE]: Docker Compose legacy isimlerini ve standart isimleri destekle
+            //[ARCH-COMPLIANCE]: Docker Compose legacy isimlerini ve standart isimleri destekle
             tls_cert_path: env::var("TLS_CERT_PATH").or_else(|_| env::var("OBSERVER_SERVICE_CERT_PATH")).ok(),
             tls_key_path: env::var("TLS_KEY_PATH").or_else(|_| env::var("OBSERVER_SERVICE_KEY_PATH")).ok(),
             tls_ca_path: env::var("TLS_CA_PATH").or_else(|_| env::var("GRPC_TLS_CA_PATH")).ok(),
             
             upstream_url: env::var("UPSTREAM_OBSERVER_URL").unwrap_or_default(),
+            tenant_id,
         }
     }
 }

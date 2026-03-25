@@ -2,13 +2,12 @@
 use crate::core::domain::LogRecord;
 use crate::ports::LogEmitter;
 use async_trait::async_trait;
-use anyhow::Result;
+use anyhow::{Result, bail};
 use tonic::transport::{Channel, ClientTlsConfig, Certificate, Identity};
 use tracing::{error, info, debug};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-// Proto generated
 use crate::api::grpc::observer_proto::observer_service_client::ObserverServiceClient;
 use crate::api::grpc::observer_proto::IngestLogRequest;
 
@@ -40,15 +39,16 @@ impl GrpcEmitter {
         let mut write_guard = self.client.write().await;
         if let Some(c) = &*write_guard { return Ok(c.clone()); }
 
-        info!("🔌 Connecting to Upstream Observer: {}", self.target_url);
+        info!(event="GRPC_CLIENT_CONNECT", target=%self.target_url, "🔌 Connecting to Upstream Observer.");
         
+        // [ARCH-COMPLIANCE] mTLS Failure Policy: Client tarafında da güvensiz fallback YASAKTIR.
         let endpoint = match (
             self.tls_cert_path.as_ref(),
             self.tls_key_path.as_ref(),
             self.tls_ca_path.as_ref()
         ) {
             (Some(cert_path), Some(key_path), Some(ca_path)) => {
-                info!("🔒 gRPC Client: Utilizing mTLS for upstream connection.");
+                info!(event="GRPC_CLIENT_MTLS", "🔒 gRPC Client: Utilizing mTLS for upstream connection.");
                 let cert = std::fs::read_to_string(cert_path)?;
                 let key = std::fs::read_to_string(key_path)?;
                 let ca_cert = std::fs::read_to_string(ca_path)?;
@@ -65,8 +65,8 @@ impl GrpcEmitter {
                     .tls_config(tls_config)?
             },
             _ => {
-                tracing::warn!("⚠️ gRPC Client: Connecting upstream without mTLS. Architectural violation.");
-                Channel::from_shared(self.target_url.clone())?
+                error!(event="GRPC_CLIENT_MTLS_FAIL", "mTLS yapılandırması eksik.");
+                bail!("[ARCH-COMPLIANCE] Upstream gRPC Client bağlantısında mTLS zorunludur.");
             }
         };
 
@@ -95,17 +95,20 @@ impl LogEmitter for GrpcEmitter {
             let raw_json = match serde_json::to_string(&log) {
                 Ok(json) => json,
                 Err(e) => {
-                    error!("Failed to serialize LogRecord for gRPC: {}", e);
+                    error!(event="JSON_SERIALIZE_ERROR", error=%e, "Failed to serialize LogRecord for gRPC");
                     continue; 
                 }
             };
             
-            let req = tonic::Request::new(IngestLogRequest {
+            let mut req = tonic::Request::new(IngestLogRequest {
                 raw_json_log: raw_json,
             });
 
+            // [ARCH-COMPLIANCE] Zorunlu Senkron Çağrı Timeout Koruması
+            req.set_timeout(std::time::Duration::from_secs(3));
+
             if let Err(e) = client.ingest_log(req).await {
-                debug!("⚠️ Failed to send log to upstream: {}", e);
+                debug!(event="UPSTREAM_SEND_FAIL", error=%e, "⚠️ Failed to send log to upstream");
             }
         }
         Ok(())
