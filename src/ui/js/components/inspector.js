@@ -133,17 +133,19 @@ open(idx) {
         this.el.workspace.classList.remove('inspector-open');
     }
 
+    // [ARCH-COMPLIANCE] V13.0 Observer - Mermaid.js SIP Ladder & Causality Timeline
     renderTimeline() {
         if (!this.el.timelineFlow) return;
         const state = Store.state;
         let targetTrace = state.controls.lockedTraceId;
+        
         if (!targetTrace && state.controls.selectedLogIdx !== null) {
             const log = state.rawLogs.find(l => l._idx === state.controls.selectedLogIdx);
             if (log) targetTrace = log.trace_id || log.attributes?.['sip.call_id'];
         }
         
         if (!targetTrace) {
-            this.el.timelineFlow.innerHTML = '<div class="empty-hint">Lock a trace or select a packet to view causality timeline.</div>';
+            this.el.timelineFlow.innerHTML = '<div class="empty-hint">Lock a trace to view SIP Ladder & Causality.</div>';
             return;
         }
 
@@ -157,29 +159,65 @@ open(idx) {
             return; 
         }
 
-        const startTs = new Date(journey[0].ts).getTime();
-        let html = '';
+        // 1. SMART RTP DIAGNOSTICS (Kayıp/Timeout Tespiti)
+        let rtpLogs = state.rawLogs.filter(l => (l.trace_id === targetTrace) && l.event === "RTP_PACKET");
+        let rtpWarning = "";
+        
+        if (journey.some(l => l.event === "RTP_TIMEOUT" || l.event === "HW_MIC_ERROR")) {
+            rtpWarning = `<div class="tag tag-dtmf" style="font-size:11px; margin-top:8px; display:inline-block; padding:4px 8px;">[SILENT_CALL] CRITICAL: Client stopped sending RTP. Check Device MIC / Network!</div>`;
+        }
+
+        // 2. MERMAID.JS SEQUENCE DIAGRAM (SIP LADDER)
+        let mermaidCode = `sequenceDiagram\n    autonumber\n`;
+        let prevSvc = "Client(UAC)"; // Başlangıç noktası
+        
         journey.forEach(l => {
-            const deltaMs = new Date(l.ts).getTime() - startTs;
-            let type = '';
-            if (l.smart_tags?.includes('SIP') || l.event.includes('SIP')) type = 'sip';
-            else if (l.smart_tags?.includes('RTP') || l.event.includes('MEDIA')) type = 'rtp';
-            if (l.severity === 'ERROR' || l.severity === 'FATAL') type = 'error';
+            let svc = l.resource['service.name'].replace("-service", "");
             
-            const escapedMsg = l.message.toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+            // Eğer log mobil veya desktop UAC'den geliyorsa, adını Client yap
+            if (svc.includes("uac") || l.event.includes("MOBILE")) {
+                svc = "Client(UAC)";
+            }
+
+            let msg = l.event;
+            // SIP Metodlarını daha şık göster
+            if (l.attributes && l.attributes['sip.method']) {
+                msg = l.attributes['sip.method'];
+            }
             
-            html += `<div class="tl-item ${type}">
-                <div class="tl-mark"></div>
-                <div class="tl-content">
-                    <div class="tl-head">
-                        <span class="tl-title">${l.event}</span>
-                        <span class="tl-time">+${deltaMs}ms</span>
-                    </div>
-                    <div class="tl-svc">${l.resource['service.name']}</div>
-                    <div class="tl-msg">${escapedMsg}</div>
-                </div>
-            </div>`;
+            // Hata ise kesik kırmızı ok, normal ise düz mavi ok
+            let arrow = (l.severity === "ERROR" || l.severity === "FATAL") ? "-x" : "->>";
+            
+            // Mermaid'in kırılmaması için mesajı temizle
+            msg = msg.replace(/[^a-zA-Z0-9_/\- ]/g, "");
+            
+            if (prevSvc !== svc || l.severity === "ERROR") {
+                mermaidCode += `    ${prevSvc}${arrow}${svc}: ${msg}\n`;
+            }
+            prevSvc = svc;
         });
+
+        // 3. HTML RENDER
+        let html = `
+            <div style="padding: 12px; background:#161619; margin-bottom:15px; border-radius:6px; border-left:3px solid var(--purple);">
+                <b style="color:white; font-size:11px;">📡 SIGNALING & RTP DIAGNOSTICS:</b><br/>
+                <span style="color:#aaa; font-size:11px; font-family:monospace;">Processed Media Packets: ${rtpLogs.length}</span><br/>
+                ${rtpWarning}
+            </div>
+            <div class="mermaid" style="background:#fff; border-radius:8px; padding:10px;">
+                ${mermaidCode}
+            </div>
+        `;
+        
         this.el.timelineFlow.innerHTML = html;
+        
+        // Mermaid.js'i tetikle
+        if (window.mermaid) {
+            window.mermaid.initialize({ theme: 'base', sequence: { showSequenceNumbers: true }});
+            // Küçük bir gecikme ile renderla ki DOM'a oturmuş olsun
+            setTimeout(() => {
+                window.mermaid.init(undefined, document.querySelectorAll('.mermaid'));
+            }, 50);
+        }
     }
 }
