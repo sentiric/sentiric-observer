@@ -1,4 +1,4 @@
-// sentiric-observer/src/ui/js/components/toolbar.js
+// src/ui/js/components/toolbar.js
 import { Store } from '../store.js';
 
 export class ToolbarComponent {
@@ -7,7 +7,6 @@ export class ToolbarComponent {
         
         this.el = {
             inpSearch: document.getElementById('filter-global'),
-            selLevel: document.getElementById('filter-level'),
             btnNoise: document.getElementById('btn-toggle-noise'),
             btnPause: document.getElementById('btn-pause'),
             btnClear: document.getElementById('btn-clear'),
@@ -22,7 +21,17 @@ export class ToolbarComponent {
 
     bindEvents() {
         this.el.inpSearch?.addEventListener('input', (e) => Store.dispatch('SET_SEARCH', e.target.value));
-        this.el.selLevel?.addEventListener('change', (e) => Store.dispatch('SET_LEVEL', e.target.value));
+
+        // [YENİ]: Checkbox Event Dinleyicileri
+        this.el.levelCheckboxes = document.querySelectorAll('.lvl-chk');
+        this.el.levelCheckboxes?.forEach(chk => {
+            chk.addEventListener('change', () => {
+                const selectedLevels = Array.from(this.el.levelCheckboxes)
+                    .filter(c => c.checked)
+                    .map(c => c.value);
+                Store.dispatch('SET_LEVELS', selectedLevels);
+            });
+        });
 
         this.el.btnNoise?.addEventListener('click', (e) => {
             Store.dispatch('TOGGLE_NOISE');
@@ -61,7 +70,7 @@ export class ToolbarComponent {
     exportData(type) {
         const state = Store.state;
         
-        // [YENİ]: Sadece Filtrelenmiş ve Ekranda Görünen Logları İndir (Level Filter Dahil)
+        // [SURGICAL EXPORT]: Sadece Checkbox ile Filtrelenmiş Logları İndir
         let dataToExport = [...state.filteredLogs]; 
         
         if (dataToExport.length === 0) return alert("No data to export!");
@@ -70,8 +79,8 @@ export class ToolbarComponent {
 
         const timestamp = new Date().toISOString().replace(/:/g, '-').slice(0, -5);
         const nodeName = document.getElementById('node-name')?.innerText || 'local';
-        const levelPrefix = state.controls.levelFilter !== "ALL" ? `${state.controls.levelFilter}_` : "";
-        const fileNameBase = `panopticon_${levelPrefix}${state.controls.lockedTraceId || 'global'}_${nodeName}_${timestamp}`;
+        const activeLevels = state.controls.levelFilters.join("-");
+        const fileNameBase = `panopticon_${activeLevels}_${state.controls.lockedTraceId || 'global'}_${nodeName}_${timestamp}`;
 
         if (type === 'raw') {
             const blob = new Blob([JSON.stringify(dataToExport, null, 2)], { type: 'application/json' });
@@ -86,7 +95,7 @@ export class ToolbarComponent {
                 return `[${l.ts.substring(11, 23)}] ${l.severity} | ${l.resource['service.name']} -> ${l.event}: ${cleanMsg}`;
             });
 
-            const report = `# Sentiric AI Context Report\nGenerated: ${new Date().toISOString()}\nNode: ${nodeName}\nLevel Filter: ${state.controls.levelFilter}\n\n## Timeline Summary\n\`\`\`log\n${lines.join('\n')}\n\`\`\`\n\n## Instructions for AI\nAnalyze the timeline above for anomalies, latency issues, or SIP protocol errors. Look specifically for 'WARN' or 'ERROR' levels.`;
+            const report = `# Sentiric AI Context Report\nGenerated: ${new Date().toISOString()}\nNode: ${nodeName}\nLevel Filters: ${activeLevels}\n\n## Timeline Summary\n\`\`\`log\n${lines.join('\n')}\n\`\`\`\n\n## Instructions for AI\nAnalyze the timeline above for anomalies, latency issues, or SIP protocol errors. Look specifically for 'WARN' or 'ERROR' levels.`;
             
             const blob = new Blob([report], { type: 'text/markdown' });
             this.downloadFile(blob, `${fileNameBase}_report.md`);

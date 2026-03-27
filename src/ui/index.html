@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SENTIRIC | Observer v6.0.3</title>
+    <title>SENTIRIC | Observer</title>
     <link rel="stylesheet" href="/ui/css/theme.css">
     <link rel="stylesheet" href="/ui/css/layout.css">
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Inter:wght@400;600;700;900&display=swap" rel="stylesheet">
@@ -56,11 +56,13 @@
             </div>
             <div class="v-divider"></div>
             <div class="filter-controls">
-                <select id="filter-level" class="t-select">
-                    <option value="ALL">ALL LEVELS</option>
-                    <option value="WARN">WARN & ERROR</option>
-                    <option value="ERROR">ERROR ONLY</option>
-                </select>
+                <div class="level-filters" id="filter-level-group" style="display:flex; gap:10px; font-size:10px; font-weight:bold; color:#aaa; align-items:center; background:#000; padding:6px 12px; border-radius:4px; border:1px solid #333;">
+                    <label style="cursor:pointer; display:flex; align-items:center; gap:3px;"><input type="checkbox" value="DEBUG" class="lvl-chk"> DBG</label>
+                    <label style="cursor:pointer; display:flex; align-items:center; gap:3px;"><input type="checkbox" value="INFO" class="lvl-chk" checked> INF</label>
+                    <label style="cursor:pointer; display:flex; align-items:center; gap:3px;"><input type="checkbox" value="WARN" class="lvl-chk" checked> WRN</label>
+                    <label style="cursor:pointer; display:flex; align-items:center; gap:3px;"><input type="checkbox" value="ERROR" class="lvl-chk" checked> ERR</label>
+                    <label style="cursor:pointer; display:flex; align-items:center; gap:3px;"><input type="checkbox" value="FATAL" class="lvl-chk" checked> FTL</label>
+                </div>
                 <button id="btn-toggle-noise" class="t-btn active">🔇 NOISE: HIDDEN</button>
             </div>
             <div class="spacer"></div>
@@ -170,7 +172,7 @@
 
         <footer id="main-footer">
             <div class="f-left">NODE: <span id="node-name" class="accent">--</span></div>
-            <div class="f-right">SENTIRIC OMNISCIENT ENGINE v12.0 (v5.0 CORE)</div>
+            <div class="f-right">SENTIRIC OMNISCIENT ENGINE </div>
         </footer>
     </div>
 

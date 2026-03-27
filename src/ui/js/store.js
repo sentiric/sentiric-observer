@@ -1,10 +1,10 @@
-// sentiric-observer/src/ui/js/store.js
+// src/ui/js/store.js
 import { CONFIG } from './config.js';
 
 export const Store = {
     state: {
         rawLogs: [],         
-        filteredLogs: [],    
+        filteredLogs:[],    
         activeTraces: new Map(), 
         
         status: {
@@ -18,12 +18,12 @@ export const Store = {
             selectedLogIdx: null, 
             hideRtpNoise: true,
             globalSearch: "",
-            levelFilter: "ALL",
-            forceRender: false // [YENİ]: Ekranı zorla temizlemek için
+            levelFilters: ["INFO", "WARN", "ERROR", "FATAL"], // [YENİ]: Çoklu filtre desteği
+            forceRender: false
         }
     },
 
-    listeners: [],
+    listeners:[],
     
     subscribe(callback) {
         this.listeners.push(callback);
@@ -58,25 +58,25 @@ export const Store = {
 
             case 'TOGGLE_NOISE':
                 this.state.controls.hideRtpNoise = !this.state.controls.hideRtpNoise;
-                this.state.controls.forceRender = true; // [FIX]: Ekranı temizle
+                this.state.controls.forceRender = true; 
                 shouldRender = this.applyFilters();
                 break;
 
             case 'SET_SEARCH':
                 this.state.controls.globalSearch = payload.toLowerCase();
-                this.state.controls.forceRender = true; // [FIX]
+                this.state.controls.forceRender = true; 
                 shouldRender = this.applyFilters();
                 break;
 
             case 'LOCK_TRACE':
                 this.state.controls.lockedTraceId = payload;
-                this.state.controls.forceRender = true; // [FIX]
+                this.state.controls.forceRender = true; 
                 shouldRender = this.applyFilters();
                 break;
 
             case 'UNLOCK_TRACE':
                 this.state.controls.lockedTraceId = null;
-                this.state.controls.forceRender = true; // [FIX]
+                this.state.controls.forceRender = true; 
                 shouldRender = this.applyFilters();
                 break;
 
@@ -87,7 +87,7 @@ export const Store = {
 
             case 'WIPE_DATA':
                 this.state.rawLogs = [];
-                this.state.filteredLogs = [];
+                this.state.filteredLogs =[];
                 this.state.activeTraces.clear();
                 this.state.controls.lockedTraceId = null;
                 this.state.controls.selectedLogIdx = null;
@@ -100,9 +100,9 @@ export const Store = {
                 shouldRender = true;
                 break;
             
-            case 'SET_LEVEL': 
-                this.state.controls.levelFilter = payload;
-                this.state.controls.forceRender = true; // [FIX]
+            case 'SET_LEVELS': // [YENİ]: Checkbox entegrasyonu
+                this.state.controls.levelFilters = payload;
+                this.state.controls.forceRender = true;
                 shouldRender = this.applyFilters();
                 break;
         }
@@ -132,7 +132,7 @@ export const Store = {
     applyFilters() {
         this.state.rawLogs.sort((a, b) => a._idx - b._idx);
         
-        const { globalSearch, hideRtpNoise, lockedTraceId, levelFilter } = this.state.controls;
+        const { globalSearch, hideRtpNoise, lockedTraceId, levelFilters } = this.state.controls;
         
         this.state.filteredLogs = this.state.rawLogs.filter(log => {
             const tid = log.trace_id || log.attributes?.['sip.call_id'];
@@ -143,8 +143,8 @@ export const Store = {
                 if (log.event === "RTP_PACKET") return false;
             }
             
-            if (levelFilter === "WARN" && log.severity !== "WARN" && log.severity !== "ERROR" && log.severity !== "FATAL") return false;
-            if (levelFilter === "ERROR" && log.severity !== "ERROR" && log.severity !== "FATAL") return false;
+            // [SMART FILTERING]: Sadece Checkbox'ta seçili olan seviyeleri göster
+            if (levelFilters && !levelFilters.includes(log.severity)) return false;
             
             if (globalSearch) {
                 const searchableString = JSON.stringify(log).toLowerCase();

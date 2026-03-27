@@ -133,7 +133,7 @@ open(idx) {
         this.el.workspace.classList.remove('inspector-open');
     }
 
-    // [ARCH-COMPLIANCE] V13.0 Observer - Mermaid.js SIP Ladder & Causality Timeline
+    // [ARCH-COMPLIANCE] V13.0 Observer - Mermaid.js SIP Ladder & Causality Timeline with Span Gantt Visualizer
     renderTimeline() {
         if (!this.el.timelineFlow) return;
         const state = Store.state;
@@ -167,28 +167,103 @@ open(idx) {
             rtpWarning = `<div class="tag tag-dtmf" style="font-size:11px; margin-top:8px; display:inline-block; padding:4px 8px;">[SILENT_CALL] CRITICAL: Client stopped sending RTP. Check Device MIC / Network!</div>`;
         }
 
-        // 2. MERMAID.JS SEQUENCE DIAGRAM (SIP LADDER)
+        // 2. GANTT / LATENCY VISUALIZER
+        let minTs = new Date(journey[0].ts).getTime();
+        let maxTs = new Date(journey[journey.length-1].ts).getTime();
+        let totalMs = Math.max(maxTs - minTs, 1);
+
+        let spans = {};
+        let events =[];
+        let services = Array.from(new Set(journey.map(l => l.resource['service.name'])));
+
+        journey.forEach(l => {
+            let ts = new Date(l.ts).getTime();
+            let svc = l.resource['service.name'];
+            if (l.span_id) {
+                if (!spans[l.span_id]) {
+                    spans[l.span_id] = { start: ts, end: ts, service: svc, name: l.event, logs: 1 };
+                } else {
+                    spans[l.span_id].end = Math.max(spans[l.span_id].end, ts);
+                    spans[l.span_id].start = Math.min(spans[l.span_id].start, ts);
+                    spans[l.span_id].logs++;
+                }
+            } else {
+                events.push({ ts: ts, service: svc, name: l.event, severity: l.severity });
+            }
+        });
+
+        let rowHeight = 28;
+        let chartHeight = services.length * rowHeight + 30;
+
+        let timelineHtml = `
+            <div style="padding: 12px; background:#161619; margin-bottom:15px; border-radius:6px; border-left:3px solid var(--purple);">
+                <b style="color:white; font-size:11px;">📡 SIGNALING & RTP DIAGNOSTICS:</b><br/>
+                <span style="color:#aaa; font-size:11px; font-family:monospace;">Processed Media Packets: ${rtpLogs.length}</span><br/>
+                ${rtpWarning}
+            </div>
+
+            <div style="padding: 12px; background:#161619; margin-bottom:15px; border-radius:6px; border-left:3px solid var(--accent);">
+                <b style="color:white; font-size:11px;">⏱️ GANTT & LATENCY VISUALIZER:</b><br/>
+                <span style="color:#aaa; font-size:11px; font-family:monospace;">Total Trace Duration: ${totalMs}ms</span>
+                <div class="gantt-wrapper" style="position:relative; width:100%; height:${chartHeight}px; background:#000; border:1px solid #333; margin-top:10px; font-family:'JetBrains Mono'; border-radius:4px; overflow:hidden;">
+        `;
+
+        // Timeline Grid Lines (Zaman Çizelgesi Çizgileri)
+        for(let i=0; i<=4; i++) {
+            let pct = i * 25;
+            let left = `calc(110px + (100% - 130px) * ${pct / 100})`;
+            timelineHtml += `<div style="position:absolute; top:0; bottom:0; left:${left}; width:1px; background:#222;"></div>`;
+            timelineHtml += `<div style="position:absolute; top:2px; left:${left}; color:#555; font-size:8px;">${Math.round((totalMs * pct)/100)}ms</div>`;
+        }
+
+        // Y-Axis (Servis İsimleri)
+        services.forEach((svc, i) => {
+            let y = i * rowHeight + 20;
+            let shortSvc = svc.replace('-service', '');
+            timelineHtml += `<div style="position:absolute; top:${y+6}px; left:5px; width:100px; font-size:9px; color:#888; font-weight:bold; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${svc}">${shortSvc}</div>`;
+            timelineHtml += `<div style="position:absolute; top:${y + 14}px; left:110px; right:0; height:1px; background:rgba(255,255,255,0.05);"></div>`;
+        });
+
+        // Span Bar Çizimleri (span_id olanlar - Uzun çubuklar)
+        Object.values(spans).forEach(span => {
+            let svcIdx = services.indexOf(span.service);
+            let y = svcIdx * rowHeight + 24;
+            let leftPct = ((span.start - minTs) / totalMs) * 100;
+            let widthPct = Math.max(((span.end - span.start) / totalMs) * 100, 0.2); // Görünür olması için min 0.2%
+            let duration = span.end - span.start;
+            let left = `calc(110px + (100% - 130px) * ${leftPct / 100})`;
+            let width = `calc((100% - 130px) * ${widthPct / 100})`;
+            timelineHtml += `<div style="position:absolute; top:${y}px; left:${left}; width:${width}; height:8px; background:var(--info); border-radius:2px; box-shadow:0 0 4px var(--info); cursor:help;" title="[SPAN] ${span.name} | ${duration}ms"></div>`;
+        });
+
+        // Event Çizimleri (span_id olmayan anlık loglar - Noktalar)
+        events.forEach(ev => {
+            let svcIdx = services.indexOf(ev.service);
+            let y = svcIdx * rowHeight + 24;
+            let leftPct = ((ev.ts - minTs) / totalMs) * 100;
+            let left = `calc(110px + (100% - 130px) * ${leftPct / 100})`;
+            let color = (ev.severity === 'ERROR' || ev.severity === 'FATAL') ? 'var(--danger)' : 'var(--accent)';
+            timelineHtml += `<div style="position:absolute; top:${y}px; left:${left}; width:4px; height:8px; background:${color}; border-radius:2px; cursor:help;" title="${ev.name} | +${ev.ts - minTs}ms"></div>`;
+        });
+
+        timelineHtml += `</div></div>`;
+
+        // 3. MERMAID.JS SEQUENCE DIAGRAM (SIP LADDER)
         let mermaidCode = `sequenceDiagram\n    autonumber\n`;
-        let prevSvc = "Client(UAC)"; // Başlangıç noktası
+        let prevSvc = "Client(UAC)"; 
         
         journey.forEach(l => {
             let svc = l.resource['service.name'].replace("-service", "");
-            
-            // Eğer log mobil veya desktop UAC'den geliyorsa, adını Client yap
             if (svc.includes("uac") || l.event.includes("MOBILE")) {
                 svc = "Client(UAC)";
             }
 
             let msg = l.event;
-            // SIP Metodlarını daha şık göster
             if (l.attributes && l.attributes['sip.method']) {
                 msg = l.attributes['sip.method'];
             }
             
-            // Hata ise kesik kırmızı ok, normal ise düz mavi ok
             let arrow = (l.severity === "ERROR" || l.severity === "FATAL") ? "-x" : "->>";
-            
-            // Mermaid'in kırılmaması için mesajı temizle
             msg = msg.replace(/[^a-zA-Z0-9_/\- ]/g, "");
             
             if (prevSvc !== svc || l.severity === "ERROR") {
@@ -197,24 +272,16 @@ open(idx) {
             prevSvc = svc;
         });
 
-        // 3. HTML RENDER
-        let html = `
-            <div style="padding: 12px; background:#161619; margin-bottom:15px; border-radius:6px; border-left:3px solid var(--purple);">
-                <b style="color:white; font-size:11px;">📡 SIGNALING & RTP DIAGNOSTICS:</b><br/>
-                <span style="color:#aaa; font-size:11px; font-family:monospace;">Processed Media Packets: ${rtpLogs.length}</span><br/>
-                ${rtpWarning}
-            </div>
+        timelineHtml += `
             <div class="mermaid" style="background:#fff; border-radius:8px; padding:10px;">
                 ${mermaidCode}
             </div>
         `;
         
-        this.el.timelineFlow.innerHTML = html;
+        this.el.timelineFlow.innerHTML = timelineHtml;
         
-        // Mermaid.js'i tetikle
         if (window.mermaid) {
             window.mermaid.initialize({ theme: 'base', sequence: { showSequenceNumbers: true }});
-            // Küçük bir gecikme ile renderla ki DOM'a oturmuş olsun
             setTimeout(() => {
                 window.mermaid.init(undefined, document.querySelectorAll('.mermaid'));
             }, 50);
