@@ -98,14 +98,40 @@ async fn ws_handler(
 async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
     let mut rx = state.tx.subscribe();
     
-    info!("🔌 MISSION CONTROL: New UI client connected to data stream.");
+    tracing::info!("🔌 MISSION CONTROL: New UI client connected to data stream.");
 
-    while let Ok(log) = rx.recv().await {
-        if let Ok(json_msg) = serde_json::to_string(&log) {
-            if socket.send(Message::Text(json_msg)).await.is_err() {
-                // DÜZELTME: 'warn' makrosu kullanılarak unused import engellendi.
-                warn!("⚠️ MISSION CONTROL: UI Client disconnected unexpectedly.");
-                break;
+    // V14.0: Micro-Batching Buffer
+    let mut buffer = Vec::new();
+    let mut ticker = tokio::time::interval(std::time::Duration::from_millis(100)); // 100ms frame rate
+
+    loop {
+        tokio::select! {
+            // Log geldikçe buffera at
+            Ok(log) = rx.recv() => {
+                buffer.push(log);
+                
+                // Eğer anlık yük 100'ü geçerse süreyi beklemeden hemen bas (Flush)
+                if buffer.len() >= 100 {
+                    let batch = std::mem::take(&mut buffer);
+                    if let Ok(json_msg) = serde_json::to_string(&batch) {
+                        if socket.send(Message::Text(json_msg)).await.is_err() {
+                            tracing::warn!("⚠️ MISSION CONTROL: UI Client disconnected unexpectedly.");
+                            break;
+                        }
+                    }
+                }
+            }
+            // 100ms dolduğunda bufferda ne varsa UI'a gönder (Frame Update)
+            _ = ticker.tick() => {
+                if !buffer.is_empty() {
+                    let batch = std::mem::take(&mut buffer);
+                    if let Ok(json_msg) = serde_json::to_string(&batch) {
+                        if socket.send(Message::Text(json_msg)).await.is_err() {
+                            tracing::warn!("⚠️ MISSION CONTROL: UI Client disconnected unexpectedly.");
+                            break;
+                        }
+                    }
+                }
             }
         }
     }

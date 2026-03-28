@@ -53,12 +53,16 @@ const App = {
 
     startNetwork() {
         new LogStream(CONFIG.WS_URL, 
-            (log) => {
-                Store.dispatch('INGEST_LOG', log);
+            (logBatch) => { // Artık tek bir log değil, 100ms'lik bir batch array geliyor.
+                Store.dispatch('INGEST_LOG', logBatch);
                 
-                // Gelen log RTP ise ve Visualizer açıksa veriyi besle
-                if (this.viz.isActive && log.event === "RTP_PACKET") {
-                    this.viz.pushData(log.attributes?.['net.packet_len'] || 0);
+                // Visualizer, RTP var mı diye tüm batch'i hızlıca tarar
+                if (this.viz.isActive) {
+                    for (const log of logBatch) {
+                        if (log.event === "RTP_PACKET") {
+                            this.viz.pushData(log.attributes?.['net.packet_len'] || 0);
+                        }
+                    }
                 }
             },
             (isOnline) => {

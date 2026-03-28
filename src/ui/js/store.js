@@ -33,21 +33,39 @@ export const Store = {
         let shouldRender = false;
 
         switch(actionType) {
-            case 'INGEST_LOG':
+            case 'INGEST_LOG': // Artık BATCH alır (Array)
                 if (this.state.status.isPaused) break;
                 
-                const log = payload;
-                if (!log._idx) log._idx = Date.now() + Math.random();
+                const logs = payload;
+                logs.forEach(log => {
+                    // --- V14.0 SMART FOLDING (AI TOKEN COLLAPSE) ---
+                    // Eğer bu log bir span parçasıysa ve LLM/STT/CHUNK içeriyorsa DOM'u kurtar.
+                    if (log.span_id && (log.event.includes('STREAM') || log.event.includes('CHUNK') || log.event.includes('TOKEN'))) {
+                        const existingLog = this.state.rawLogs.find(l => l.span_id === log.span_id && l.event === log.event);
+                        if (existingLog) {
+                            // Cümleye token ekle
+                            existingLog.message += log.message;
+                            existingLog.ts = log.ts; // Zamanı güncelle
+                            // NOT: Matrix.js'in bu değişikliği algılaması için "forceRender" tetikleyebiliriz
+                            // Ancak şimdilik sadece string büyüsün, sonraki adımda Virtual DOM bunu halledecek.
+                            this.state.controls.forceRender = true;
+                            return; // Yeni satır açmadan çık.
+                        }
+                    }
 
-                this.state.rawLogs.push(log);
-                
+                    // Standart işlem
+                    if (!log._idx) log._idx = Date.now() + Math.random();
+                    this.state.rawLogs.push(log);
+                    this.state.status.pps++;
+                    this.extractTrace(log);
+                });
+
+                // Hafıza Temizliği
                 if (this.state.rawLogs.length > CONFIG.MAX_LOGS) {
                     const excess = this.state.rawLogs.length - CONFIG.MAX_LOGS;
                     this.state.rawLogs.splice(0, excess);
                 }
 
-                this.state.status.pps++;
-                this.extractTrace(log);
                 shouldRender = this.applyFilters();
                 break;
 

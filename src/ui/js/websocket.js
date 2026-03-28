@@ -1,4 +1,4 @@
-// src/ui/js/websocket.js
+// Dosya: src/ui/js/websocket.js (Tümü Değişecek)
 export class LogStream {
     constructor(url, onMessage, onStatusChange) {
         this.url = url;
@@ -6,35 +6,38 @@ export class LogStream {
         this.onStatusChange = onStatusChange;
         this.conn = null;
         this.reconnectAttempts = 0;
-        this.maxDelay = 10000; // Max 10s bekleme
+        this.maxDelay = 10000;
     }
 
     connect() {
-        console.log(`📡 [v5.0] Connecting to Uplink: ${this.url}`);
+        console.log(`📡[v14.0] Connecting to Omniscient Uplink: ${this.url}`);
         this.conn = new WebSocket(this.url);
 
         this.conn.onopen = () => {
             this.reconnectAttempts = 0;
             this.onStatusChange(true);
-            console.log("✅ [v5.0] Uplink Secured");
+            console.log("✅[v14.0] Uplink Secured (Micro-Batching Enabled)");
         };
 
         this.conn.onclose = () => {
             this.onStatusChange(false);
-            
-            // Exponential Backoff (1s, 2s, 4s, 8s, 10s...)
             const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), this.maxDelay);
             this.reconnectAttempts++;
-            
             console.log(`❌ Uplink Lost. Retrying in ${delay}ms...`);
             setTimeout(() => this.connect(), delay);
         };
 
         this.conn.onmessage = (e) => {
             try {
-                this.onMessage(JSON.parse(e.data));
+                const data = JSON.parse(e.data);
+                // Artık tek bir nesne değil, her 100ms'de bir Dizi (Array) gelir.
+                if (Array.isArray(data)) {
+                    this.onMessage(data); // Batched payload
+                } else {
+                    this.onMessage([data]); // Geriye dönük uyumluluk
+                }
             } catch (err) {
-                console.warn("⚠️ Corrupt Packet Dropped:", err);
+                console.warn("⚠️ Corrupt Frame Dropped:", err);
             }
         };
     }
