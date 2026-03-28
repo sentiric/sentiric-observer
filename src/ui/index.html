@@ -7,16 +7,15 @@
     <link rel="stylesheet" href="/ui/css/theme.css">
     <link rel="stylesheet" href="/ui/css/layout.css">
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Inter:wght@400;600;700;900&display=swap" rel="stylesheet">
-    
-    <!-- V13.0: Mermaid.js for SIP Ladder and Causality Diagrams -->
     <script src="https://cdn.jsdelivr.net/npm/mermaid@10.8.0/dist/mermaid.min.js"></script>
-
 </head>
 <body>
     <div id="app-root">
         <!-- GLOBAL COMMAND HEADER -->
         <header id="main-header">
             <div class="h-left">
+                <!-- Mobil için menü açma butonu -->
+                <button id="mobile-menu-btn" class="icon-btn mobile-only">☰</button>
                 <span class="logo-pulse">💠</span>
                 <div class="brand-group">
                     <h1 class="brand-title">PANOPTICON <span class="v-badge">v</span></h1>
@@ -24,7 +23,7 @@
                 </div>
             </div>
 
-            <div class="h-center">
+            <div class="h-center desktop-only">
                 <div class="tactical-pod">
                     <div class="pod-info">
                         <span class="pod-lbl">WIRE INTERCEPTOR</span>
@@ -43,7 +42,7 @@
                 <div class="metrics-grid">
                     <div class="metric-box"><b id="pps-val">0</b><small>PPS</small></div>
                     <div class="metric-box"><b id="buffer-val">0%</b><small>BUF</small></div>
-                    <div class="metric-box"><b id="total-val">0</b><small>EVT</small></div>
+                    <div class="metric-box desktop-only"><b id="total-val">0</b><small>EVT</small></div>
                 </div>
             </div>
         </header>
@@ -52,16 +51,16 @@
         <nav id="toolbar">
             <div class="search-unit">
                 <span class="icon">🔍</span>
-                <input type="text" id="filter-global" placeholder="Search Trace ID, Phone, Error, DB Query...">
+                <input type="text" id="filter-global" placeholder="Search Trace ID, Phone, Error...">
             </div>
-            <div class="v-divider"></div>
-            <div class="filter-controls">
-                <div class="level-filters" id="filter-level-group" style="display:flex; gap:10px; font-size:10px; font-weight:bold; color:#aaa; align-items:center; background:#000; padding:6px 12px; border-radius:4px; border:1px solid #333;">
-                    <label style="cursor:pointer; display:flex; align-items:center; gap:3px;"><input type="checkbox" value="DEBUG" class="lvl-chk"> DBG</label>
-                    <label style="cursor:pointer; display:flex; align-items:center; gap:3px;"><input type="checkbox" value="INFO" class="lvl-chk" checked> INF</label>
-                    <label style="cursor:pointer; display:flex; align-items:center; gap:3px;"><input type="checkbox" value="WARN" class="lvl-chk" checked> WRN</label>
-                    <label style="cursor:pointer; display:flex; align-items:center; gap:3px;"><input type="checkbox" value="ERROR" class="lvl-chk" checked> ERR</label>
-                    <label style="cursor:pointer; display:flex; align-items:center; gap:3px;"><input type="checkbox" value="FATAL" class="lvl-chk" checked> FTL</label>
+            <div class="v-divider desktop-only"></div>
+            <div class="filter-controls desktop-only">
+                <div class="level-filters" id="filter-level-group">
+                    <label><input type="checkbox" value="DEBUG" class="lvl-chk"> DBG</label>
+                    <label><input type="checkbox" value="INFO" class="lvl-chk" checked> INF</label>
+                    <label><input type="checkbox" value="WARN" class="lvl-chk" checked> WRN</label>
+                    <label><input type="checkbox" value="ERROR" class="lvl-chk" checked> ERR</label>
+                    <label><input type="checkbox" value="FATAL" class="lvl-chk" checked> FTL</label>
                 </div>
                 <button id="btn-toggle-noise" class="t-btn active">🔇 NOISE: HIDDEN</button>
             </div>
@@ -80,18 +79,15 @@
         </nav>
 
         <!-- WORKSPACE (TRIPLE PANE) -->
-        <div id="workspace">
+        <div id="workspace" class="mobile-layout-wrapper">
             <!-- LEFT: TRACE EXPLORER -->
-            <aside id="trace-locator">
+            <aside id="trace-locator" class="panel-transition">
                 <div class="pane-header">
                     <span>CALL JOURNEYS</span>
-                    <button id="btn-clear-traces" class="icon-btn" title="Clear Traces">🗑</button>
+                    <div class="header-controls"></div>
                 </div>
                 <div id="trace-list" class="scroller">
                     <div class="empty-hint">Awaiting signaling data...</div>
-                </div>
-                <div class="pane-footer">
-                    <button id="btn-unlock-trace" class="u-btn" style="display:none;">🔓 UNLOCK STREAM</button>
                 </div>
             </aside>
 
@@ -100,7 +96,7 @@
                 <div class="matrix-head">
                     <div class="c-time">TIMESTAMP</div>
                     <div class="c-lvl">LVL</div>
-                    <div class="c-node" style="color:#58a6ff">NODE</div>
+                    <div class="c-node desktop-only">NODE</div>
                     <div class="c-svc">SERVICE</div>
                     <div class="c-evt">EVENT TYPE</div>
                     <div class="c-msg">DATA PAYLOAD / SUMMARY</div>
@@ -111,7 +107,7 @@
             </main>
 
             <!-- RIGHT: FORENSIC INSPECTOR -->
-            <aside id="inspector">
+            <aside id="inspector" class="panel-transition">
                 <div class="pane-header tabbed">
                     <div class="tabs">
                         <button class="tab-btn active" data-tab="view-details">PACKET INFO</button>
@@ -125,11 +121,9 @@
                     <div id="insp-placeholder" class="empty-hint">Select a log entry to analyze.</div>
 
                     <div id="insp-content" style="display:none;">
-                        <!-- Quick Meta -->
-                        <div class="data-card meta">
-                            <div class="m-row"><span class="k">TIME:</span> <span class="v" id="det-ts"></span></div>
-                            <div class="m-row"><span class="k">NODE:</span> <span class="v" id="det-node"></span></div>
-                            <div class="m-row"><span class="k">TRACE:</span> <span class="v" id="det-trace" class="trace-link"></span></div>
+                        <!-- FULL LOG DATA VIEW (Fixed) -->
+                        <div class="data-card meta" id="full-log-kv">
+                            <!-- JS ile doldurulacak -->
                         </div>
 
                         <!-- RTP ANALYZER WITH VISUALIZER CANVAS -->
@@ -140,22 +134,15 @@
                                 <div class="rs-item"><small>PT</small><b id="rtp-pt">--</b></div>
                                 <div class="rs-item"><small>SIZE</small><b id="rtp-len">--</b></div>
                             </div>
-                            <div class="jitter-track">
-                                <div id="jitter-bar"></div>
-                            </div>
-                            <!-- v5.0 Visualizer Integration -->
                             <canvas id="scope-chart" class="cyber-canvas" width="400" height="60"></canvas>
                         </div>
 
-                        <!-- RAW WIRE PAYLOAD -->
-                        <div id="raw-card" class="data-card raw" style="display:none;">
-                            <div class="card-label highlight">RAW WIRE PAYLOAD</div>
-                            <pre id="raw-viewer" class="code-view raw"></pre>
-                        </div>
-
-                        <!-- ATTRIBUTES -->
+                        <!-- RAW JSON VIEWER -->
                         <div class="data-card">
-                            <div class="card-label">JSON ATTRIBUTES</div>
+                            <div class="card-label" style="display:flex; justify-content:space-between; align-items:center;">
+                                <span>RAW JSON PAYLOAD</span>
+                                <button id="btn-copy-json" class="icon-btn" title="Copy to Clipboard">📋</button>
+                            </div>
                             <pre id="json-viewer" class="code-view"></pre>
                         </div>
                     </div>
@@ -163,8 +150,11 @@
 
                 <!-- VIEW 2: TIMELINE -->
                 <div id="view-timeline" class="insp-view scroller">
+                    <div style="display:flex; justify-content:flex-end; margin-bottom:10px;">
+                        <button id="btn-export-diagram" class="t-btn primary" style="display:none;">📸 EXPORT DIAGRAM</button>
+                    </div>
                     <div id="timeline-flow" class="timeline-body">
-                        <!-- JS Dynamic Content -->
+                        <div class="empty-hint">Lock a trace to view Timeline.</div>
                     </div>
                 </div>
             </aside>

@@ -105,3 +105,18 @@ input:checked + .slider:before { transform: translateX(16px); }
 
 @keyframes blink { 50% { opacity: 0.3; } }
 @keyframes glow { from { text-shadow: 0 0 2px var(--info); } to { text-shadow: 0 0 8px var(--info); } }
+
+/* src/ui/css/theme.css - EKLENECEK KISIM (En alta yapıştırın) */
+.kv-table { width: 100%; border-collapse: collapse; font-family: 'JetBrains Mono'; font-size: 11px; }
+.kv-table tr { border-bottom: 1px solid #1a1a1a; }
+.kv-table tr:last-child { border-bottom: none; }
+.kv-table td { padding: 6px 0; vertical-align: top; }
+.kv-table .k-col { color: #666; width: 120px; font-weight: bold; }
+.kv-table .v-col { color: #ccc; word-break: break-all; }
+.kv-table .v-col.accent { color: var(--accent); }
+.kv-table .v-col.warn { color: var(--warn); }
+.kv-table .v-col.danger { color: var(--danger); }
+
+.filter-controls { display: flex; align-items: center; gap: 10px; }
+.level-filters { display:flex; gap:10px; font-size:10px; font-weight:bold; color:#aaa; align-items:center; background:#000; padding:6px 12px; border-radius:4px; border:1px solid #333; }
+.lvl-chk { cursor: pointer; accent-color: var(--accent); }

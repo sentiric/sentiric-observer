@@ -1,4 +1,4 @@
-/* src/ui/css/layout.css - SOVEREIGN THEME v5.1 */
+/* src/ui/css/layout.css - SOVEREIGN THEME v6.0 */
 :root {
     --bg-dark: #050505;
     --bg-panel: #0d1117;
@@ -19,7 +19,7 @@
     --h-toolbar: 44px;
     --h-footer: 24px;
     --w-left: 280px;
-    --w-right: 480px;
+    --w-right: 500px;
 }
 
 body, html { 
@@ -28,12 +28,12 @@ body, html {
     font-family: 'Inter', -apple-system, sans-serif; 
 }
 
-#app-root { display: flex; flex-direction: column; height: 100vh; }
+#app-root { display: flex; flex-direction: column; height: 100vh; width: 100vw; }
 
 h1, h2, h3 { margin: 0; }
 .mono { font-family: 'JetBrains Mono', monospace; }
 
-/* HEADER */
+/* HEADER & TOOLBAR */
 #main-header {
     height: var(--h-header); background: var(--bg-header); border-bottom: 1px solid var(--border);
     display: flex; justify-content: space-between; align-items: center; padding: 0 20px; z-index: 500;
@@ -42,12 +42,11 @@ h1, h2, h3 { margin: 0; }
 .h-right { justify-content: flex-end; }
 .h-center { flex: 1; display: flex; justify-content: center; align-items: center; gap: 24px; }
 
-/* TOOLBAR */
 #toolbar {
     height: var(--h-toolbar); background: var(--bg-hover); border-bottom: 1px solid #30363d;
     display: flex; align-items: center; padding: 0 15px; gap: 15px; z-index: 400;
 }
-.search-unit { flex: 0 0 350px; position: relative; }
+.search-unit { flex: 1; max-width: 400px; position: relative; }
 .search-unit input { 
     width: 100%; background: #000; border: 1px solid #333; color: #fff; 
     padding: 6px 10px 6px 28px; border-radius: 4px; font-size: 11px; 
@@ -56,45 +55,59 @@ h1, h2, h3 { margin: 0; }
 .search-unit input:focus { border-color: var(--accent); box-shadow: 0 0 5px rgba(0,255,157,0.2); }
 .search-unit .icon { position: absolute; left: 8px; font-size: 12px; color: #555; top: 7px; }
 
-
-
-#trace-locator { background: var(--bg-panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; z-index: 50; overflow: hidden; }
-#matrix-pane { background: var(--bg-dark); display: flex; flex-direction: column; min-width: 0; height: 100%; overflow: hidden; }
-#inspector { background: var(--bg-header); border-left: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; z-index: 60; }
-
 /* SCROLLER */
 .scroller { 
     flex: 1; overflow-y: auto; overflow-x: hidden; 
     scrollbar-width: thin; scrollbar-color: #333 transparent; 
-    height: 100%; 
-    transform: translateZ(0); 
-    will-change: scroll-position;
+    height: 100%; transform: translateZ(0); will-change: scroll-position;
 }
-.scroller:hover { scrollbar-color: var(--accent) transparent; }
+.scroller::-webkit-scrollbar { width: 6px; height: 6px; }
+.scroller::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+.scroller:hover::-webkit-scrollbar-thumb { background: var(--accent); }
 
-/* MATRIX (Hata Çözüldü: Min-height eklendi, content-visibility silindi) */
-.matrix-head {
-    display: grid; grid-template-columns: 85px 55px 120px 140px 185px 1fr; gap: 10px;
-    padding: 8px 15px; background: #111; font-size: 10px; font-weight: 800; color: #666;
-    border-bottom: 1px solid #222; letter-spacing: 1px; flex-shrink: 0;
+/* --- MATRIX GRID FIX (Tam Hizalama) --- */
+/* Başlık ve içerik satırları tamamen aynı grid şablonunu kullanmak ZORUNDA */
+.matrix-head, .log-row {
+    display: grid;
+    /* 80px Saat | 45px Seviye | 110px Node | 160px Servis | 200px Event | Kalanı Mesaj */
+    grid-template-columns: 80px 45px 110px 160px 200px 1fr; 
+    gap: 15px;
+    padding: 6px 15px;
+    align-items: center;
 }
-#matrix-content { display: block; }
+
+.matrix-head {
+    background: #111; font-size: 10px; font-weight: 800; color: #666;
+    border-bottom: 1px solid #222; letter-spacing: 1px; flex-shrink: 0;
+    padding-top: 8px; padding-bottom: 8px;
+}
+
+#matrix-pane { background: var(--bg-dark); display: flex; flex-direction: column; min-width: 0; height: 100%; overflow: hidden; }
 
 .log-row {
-    display: grid; grid-template-columns: 85px 55px 120px 140px 185px 1fr; gap: 10px;
-    padding: 6px 15px; border-bottom: 1px solid #111; cursor: pointer;
-    font-family: 'JetBrains Mono', monospace; font-size: 11px; align-items: center; 
-    white-space: nowrap; color: #aaa;
-    min-height: 28px; /* DÜZELTME: Satırların ezilmesini önler */
+    border-bottom: 1px solid #111; cursor: pointer;
+    font-family: 'JetBrains Mono', monospace; font-size: 11px; 
+    color: #aaa; min-height: 32px; transition: background 0.1s;
 }
 .log-row:hover { background: #1a1a1a; color: #fff; }
-.log-row.selected { background: rgba(0, 255, 157, 0.08) !important; border-left: 2px solid var(--accent); padding-left: 13px; color: #fff; }
+.log-row.selected { background: rgba(0, 255, 157, 0.08) !important; border-left: 3px solid var(--accent); padding-left: 12px; color: #fff; }
 
-.message-cell { display: flex; align-items: center; justify-content: space-between; overflow: hidden; gap: 15px; }
-.message-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #999; }
-.tags-container { display: flex; gap: 5px; }
+/* Hücrelerin dışarı taşmasını engelleme */
+.log-row > span {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: block;
+}
 
-/* PANES (Hata Çözüldü: Flex wrap düzeltildi) */
+.message-cell { display: flex; align-items: center; justify-content: space-between; overflow: hidden; gap: 10px; width: 100%; }
+.message-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #999; flex: 1; }
+.tags-container { display: flex; gap: 4px; flex-shrink: 0; }
+
+/* PANES */
+#trace-locator { background: var(--bg-panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; z-index: 50; overflow: hidden; }
+#inspector { background: var(--bg-panel); border-left: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; z-index: 60; box-shadow: -5px 0 15px rgba(0,0,0,0.5); }
+
 .pane-header { 
     padding: 12px 15px; background: rgba(0,0,0,0.3); border-bottom: 1px solid #222; 
     font-size: 10px; font-weight: 800; color: #888; letter-spacing: 1px; 
@@ -107,76 +120,76 @@ h1, h2, h3 { margin: 0; }
 #main-footer { height: var(--h-footer); background: var(--bg-panel); border-top: 1px solid #222; display: flex; justify-content: space-between; align-items: center; padding: 0 20px; font-size: 9px; color: #555; letter-spacing: 1px; font-weight: bold; z-index: 500;}
 .accent { color: var(--accent); }
 
-/* --- DİNAMİK GRID VE SOL MENÜ YÖNETİMİ --- */
-
+/* --- DİNAMİK GRID (Animasyonlu Geçişler) --- */
 #workspace {
     display: grid;
-    /* Varsayılan: Sol Açık (280px) | Orta (Esnek) | Sağ Kapalı (0px) */
     grid-template-columns: var(--w-left) 1fr 0px; 
     overflow: hidden; 
     height: calc(100vh - var(--h-header) - var(--h-toolbar) - var(--h-footer)); 
-    transition: grid-template-columns 0.25s cubic-bezier(0.4, 0, 0.2, 1); /* Profesyonel geçiş animasyonu */
+    transition: grid-template-columns 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); 
+    width: 100vw;
 }
 
-/* DURUM 1: Sol Panel Kapalı */
-#workspace.left-collapsed {
-    grid-template-columns: 40px 1fr 0px;
-}
+#workspace.left-collapsed { grid-template-columns: 40px 1fr 0px; }
+#workspace.inspector-open { grid-template-columns: var(--w-left) 1fr var(--w-right); }
+#workspace.left-collapsed.inspector-open { grid-template-columns: 40px 1fr var(--w-right); }
 
-/* DURUM 2: Sağ Panel Açık */
-#workspace.inspector-open {
-    grid-template-columns: var(--w-left) 1fr var(--w-right);
-}
-
-/* DURUM 3: Sol Kapalı + Sağ Açık */
-#workspace.left-collapsed.inspector-open {
-    grid-template-columns: 40px 1fr var(--w-right);
-}
-
-/* --- SOL PANEL KAPALIYKEN GİZLENECEK ELEMANLAR --- */
-
-/* 1. Başlık (CALL JOURNEYS) gizlensin */
-#workspace.left-collapsed #trace-locator .pane-header > span {
-    display: none;
-}
-
-/* 2. Çöp Kutusu butonu gizlensin */
-#workspace.left-collapsed #trace-locator #btn-clear-traces {
-    display: none;
-}
-
-/* 3. Liste, Kaydırma Çubuğu ve Footer (Unlock Butonu) gizlensin */
+/* Sol Kapalıyken Eleman Gizleme */
+#workspace.left-collapsed #trace-locator .pane-header > span,
+#workspace.left-collapsed #trace-locator #btn-clear-traces,
 #workspace.left-collapsed #trace-list,
-#workspace.left-collapsed .pane-footer {
-    display: none !important;
-}
+#workspace.left-collapsed .pane-footer { display: none !important; }
+#workspace.left-collapsed #trace-locator .pane-header { justify-content: center; padding: 0; }
+#workspace.left-collapsed .header-controls { gap: 0 !important; }
 
-/* 4. Header sadece Ok tuşunu ortalasın */
-#workspace.left-collapsed #trace-locator .pane-header {
-    justify-content: center; /* Ortala */
-    padding: 0;              /* Boşlukları sil */
-}
-
-/* 5. Header içindeki buton grubu sıkışmasın */
-#workspace.left-collapsed .header-controls {
-    gap: 0 !important;
-}
-
-/* --- V14.0 HIGHLIGHT PULSE ANIMATION --- */
+/* --- ANIMATIONS --- */
 @keyframes pulse-bg {
-    0% { background: rgba(0, 255, 157, 0.6); }
+    0% { background: rgba(0, 255, 157, 0.4); }
     100% { background: transparent; }
 }
+.highlight-pulse { animation: pulse-bg 1.5s ease-out; border-left: 3px solid var(--accent) !important; color: #fff !important; }
 
-.highlight-pulse {
-    animation: pulse-bg 2s ease-out;
-    border-left: 3px solid var(--accent) !important;
+.timeline-jump { transition: transform 0.2s, box-shadow 0.2s; }
+.timeline-jump:hover { transform: scale(1.5); box-shadow: 0 0 10px #fff; z-index: 10; }
+
+/* --- RESPONSIVE MOBILE FIXES --- */
+.mobile-only { display: none; }
+
+@media (max-width: 1100px) {
+    /* Orta ölçekte Node sütununu gizle */
+    .c-node, .desktop-only { display: none !important; }
+    .matrix-head, .log-row { grid-template-columns: 80px 45px 160px 200px 1fr; }
+    :root { --w-right: 400px; }
 }
 
-.timeline-jump {
-    transition: transform 0.2s, box-shadow 0.2s;
-}
-.timeline-jump:hover {
-    transform: scale(1.5);
-    box-shadow: 0 0 10px #fff;
+@media (max-width: 768px) {
+    .mobile-only { display: inline-block; }
+    :root { --h-header: 50px; --h-toolbar: 50px; }
+    
+    /* Mobil Grid - Sadece Liste */
+    #workspace { grid-template-columns: 1fr; display: flex; position: relative; }
+    #matrix-pane { flex: 1; width: 100vw; }
+    
+    /* Sütunları daralt */
+    .matrix-head, .log-row { grid-template-columns: 75px 40px 100px 100px 1fr; gap: 8px; font-size: 10px; }
+    
+    /* Panelleri "Drawer" (Çekmece) yap */
+    #trace-locator, #inspector {
+        position: absolute;
+        top: 0; bottom: 0;
+        width: 85vw;
+        max-width: 350px;
+        z-index: 1000;
+        transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+        box-shadow: 0 0 20px rgba(0,0,0,0.8);
+    }
+    
+    #trace-locator { left: 0; transform: translateX(-100%); }
+    #inspector { right: 0; transform: translateX(100%); width: 90vw; max-width: none; }
+    
+    #workspace.mobile-left-open #trace-locator { transform: translateX(0); }
+    #workspace.inspector-open #inspector { transform: translateX(0); }
+    
+    .level-filters { display: none !important; }
+    .action-controls .t-btn { padding: 6px 8px; font-size: 9px; }
 }

@@ -22,7 +22,6 @@ export class ToolbarComponent {
     bindEvents() {
         this.el.inpSearch?.addEventListener('input', (e) => Store.dispatch('SET_SEARCH', e.target.value));
 
-        // [YENİ]: Checkbox Event Dinleyicileri
         this.el.levelCheckboxes = document.querySelectorAll('.lvl-chk');
         this.el.levelCheckboxes?.forEach(chk => {
             chk.addEventListener('change', () => {
@@ -38,6 +37,14 @@ export class ToolbarComponent {
             e.target.innerText = Store.state.controls.hideRtpNoise ? "🔇 NOISE: HIDDEN" : "🔊 NOISE: VISIBLE";
             e.target.classList.toggle('active', Store.state.controls.hideRtpNoise);
         });
+
+        // Mobil Menü (Hamburger) Butonu
+        const mobileBtn = document.getElementById('mobile-menu-btn');
+        if (mobileBtn) {
+            mobileBtn.addEventListener('click', () => {
+                document.getElementById('workspace').classList.toggle('mobile-left-open');
+            });
+        }
 
         this.el.btnPause?.addEventListener('click', (e) => {
             Store.dispatch('TOGGLE_PAUSE');
