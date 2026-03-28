@@ -10,7 +10,7 @@ export class InspectorComponent {
             workspace: document.getElementById('workspace'),
             inspPlaceholder: document.getElementById('insp-placeholder'),
             inspContent: document.getElementById('insp-content'),
-            fullLogKv: document.getElementById('full-log-kv'), // YENİ: Tam detay tablosu
+            fullLogKv: document.getElementById('full-log-kv'),
             detJson: document.getElementById('json-viewer'),
             rtpCard: document.getElementById('rtp-diag'),
             rtpPt: document.getElementById('rtp-pt'),
@@ -75,7 +75,6 @@ export class InspectorComponent {
             });
         });
 
-        // Timeline Jump Event Delegation
         this.el.timelineFlow?.addEventListener('click', (e) => {
             const jumpEl = e.target.closest('.timeline-jump');
             if (jumpEl && jumpEl.dataset.idx) {
@@ -84,7 +83,6 @@ export class InspectorComponent {
             }
         });
 
-        // Copy JSON
         this.el.btnCopyJson?.addEventListener('click', () => {
             if (this.el.detJson) {
                 navigator.clipboard.writeText(this.el.detJson.innerText);
@@ -93,8 +91,8 @@ export class InspectorComponent {
             }
         });
 
-        // Export Diagram
-        this.el.btnExportDiag?.addEventListener('click', () => this.exportDiagramAsImage());
+        // [YENİ]: Tüm diyagramları tek tıklamayla indir
+        this.el.btnExportDiag?.addEventListener('click', () => this.exportVisuals());
     }
 
     open(idx) {
@@ -105,7 +103,6 @@ export class InspectorComponent {
         this.el.inspPlaceholder.style.display = 'none';
         this.el.inspContent.style.display = 'block';
 
-        // --- TAM DETAY TABLOSU (Full Log Data) ---
         if (this.el.fullLogKv) {
             let sevClass = "";
             if(log.severity === "ERROR" || log.severity === "FATAL") sevClass = "danger";
@@ -124,10 +121,8 @@ export class InspectorComponent {
                     <tr><td class="k-col">SPAN ID</td><td class="v-col">${spanId}</td></tr>
                     <tr><td class="k-col">NODE</td><td class="v-col">${log.resource?.['host.name'] || 'N/A'}</td></tr>
                     <tr><td class="k-col">SERVICE</td><td class="v-col">${log.resource?.['service.name'] || 'N/A'} (v${log.resource?.['service.version']})</td></tr>
-                    <tr><td class="k-col">TENANT</td><td class="v-col">${log.tenant_id || 'N/A'}</td></tr>
                 </table>`;
             
-            // AI Diagnostics Ekstra
             if (log._ts_start && log.event.includes('STREAM')) {
                 const duration = new Date(log.ts).getTime() - new Date(log._ts_start).getTime();
                 const approxTokens = Math.max(Math.floor(log.message.length / 4), 1);
@@ -137,20 +132,17 @@ export class InspectorComponent {
                 html += `<div style="margin-top:10px; padding:8px; border-radius:4px; background:rgba(0,0,0,0.5); border-left:3px solid ${speedColor};">
                     <span style="font-size:9px; color:${speedColor}; font-weight:bold; display:block; margin-bottom:4px;">🧠 AI VELOCITY</span>
                     <div style="font-family:'JetBrains Mono'; font-size:11px; display:flex; justify-content:space-between;">
-                        <span style="color:#888;">Speed:</span>
-                        <span style="color:${speedColor}; font-weight:bold;">${msPerToken} ms/tok</span>
+                        <span style="color:#888;">Speed:</span><span style="color:${speedColor}; font-weight:bold;">${msPerToken} ms/tok</span>
                     </div>
                 </div>`;
             }
             this.el.fullLogKv.innerHTML = html;
         }
 
-        // Raw JSON View (Tam obje)
         const safeLog = JSON.parse(JSON.stringify(log));
         if (safeLog.attributes?.['rtp.audio_b64']) safeLog.attributes['rtp.audio_b64'] = "[BASE64_AUDIO_DATA_HIDDEN]";
         if (this.el.detJson) this.el.detJson.innerText = JSON.stringify(safeLog, null, 2);
 
-        // RTP Card
         const isRtp = log.event === "RTP_PACKET" || log.smart_tags?.includes('RTP');
         if (this.el.rtpCard) {
             this.el.rtpCard.style.display = isRtp ? 'block' : 'none';
@@ -166,7 +158,6 @@ export class InspectorComponent {
             }
         }
         
-        // Eğer Timeline tab'ı açıksa hemen render et
         if (document.querySelector('.tab-btn[data-tab="view-timeline"]').classList.contains('active')) {
             this.renderTimeline();
         }
@@ -183,29 +174,34 @@ export class InspectorComponent {
         return unsafe.toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     }
 
-    // Export SVG Diagram
-    exportDiagramAsImage() {
-        const svgElement = this.el.timelineFlow.querySelector('.mermaid svg');
-        if (!svgElement) return alert("Diagram not ready yet.");
+    // [YENİ] Vektörel Dışa Aktarım Engine
+    exportVisuals() {
+        const tid = Store.state.controls.lockedTraceId || "trace";
+        
+        // 1. Gantt SVG Export
+        const ganttSvg = this.el.timelineFlow.querySelector('#gantt-svg');
+        if (ganttSvg) {
+            this.downloadSvg(ganttSvg, `sentiric_gantt_latency_${tid}.svg`);
+        }
 
+        // 2. Mermaid Sequence SVG Export
+        const seqSvg = this.el.timelineFlow.querySelector('.mermaid svg');
+        if (seqSvg) {
+            this.downloadSvg(seqSvg, `sentiric_sequence_ladder_${tid}.svg`);
+        }
+    }
+
+    downloadSvg(svgElement, filename) {
         const serializer = new XMLSerializer();
         let source = serializer.serializeToString(svgElement);
-        
-        // Fix xml namespaces
         if(!source.match(/^<svg[^>]+xmlns="http\:\/\/www\.w3\.org\/2000\/svg"/)){
             source = source.replace(/^<svg/, '<svg xmlns="http://www.w3.org/2000/svg"');
         }
-
         const blob = new Blob([source], {type: "image/svg+xml;charset=utf-8"});
         const url = URL.createObjectURL(blob);
-        
         const a = document.createElement("a");
-        a.href = url;
-        const tid = Store.state.controls.lockedTraceId || "trace";
-        a.download = `sentiric_timeline_${tid}.svg`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
+        a.href = url; a.download = filename;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
         URL.revokeObjectURL(url);
     }
 
@@ -226,6 +222,7 @@ export class InspectorComponent {
         }
 
         this.el.btnExportDiag.style.display = 'block';
+        this.el.btnExportDiag.innerHTML = '📸 EXPORT SVG DIAGRAMS';
 
         const journey = state.rawLogs
             .filter(l => (l.trace_id || l.attributes?.['sip.call_id']) === targetTrace)
@@ -237,7 +234,6 @@ export class InspectorComponent {
             return; 
         }
 
-        // --- GANTT & SEQUENCE RENDER ---
         let minTs = new Date(journey[0].ts).getTime();
         let maxTs = new Date(journey[journey.length-1].ts).getTime();
         let totalMs = Math.max(maxTs - minTs, 1);
@@ -257,52 +253,63 @@ export class InspectorComponent {
             }
         });
 
-        let rowHeight = 28;
-        let chartHeight = services.length * rowHeight + 30;
+        let rowHeight = 30;
+        let chartHeight = services.length * rowHeight + 40;
+        let svgWidth = 600; // Export için sabit genişlik referansı (ViewBox)
+
+        // --- [YENİ] NATIVE SVG GANTT CHART ---
+        // Bu yapı HTML Div'lerinden kat kat üstündür ve kusursuz vektör imaj olarak indirilebilir.
+        let svgContent = `<svg id="gantt-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${svgWidth} ${chartHeight}" width="100%" height="100%" style="background:#0a0a0a; font-family:'JetBrains Mono', monospace;">`;
+        
+        // Zaman Çizgileri
+        for(let i=0; i<=4; i++) {
+            let pct = i * 25;
+            let x = 120 + ((svgWidth - 130) * (pct / 100));
+            svgContent += `<line x1="${x}" y1="0" x2="${x}" y2="${chartHeight}" stroke="#222" stroke-width="1"/>`;
+            svgContent += `<text x="${x}" y="10" fill="#555" font-size="8" text-anchor="middle">${Math.round((totalMs * pct)/100)}ms</text>`;
+        }
+
+        // Servis İsimleri ve Grid
+        services.forEach((svc, i) => {
+            let y = i * rowHeight + 30;
+            let shortSvc = svc.replace('-service', '');
+            svgContent += `<text x="10" y="${y+4}" fill="#888" font-size="10" font-weight="bold">${shortSvc}</text>`;
+            svgContent += `<line x1="110" y1="${y+10}" x2="${svgWidth}" y2="${y+10}" stroke="rgba(255,255,255,0.05)" stroke-width="1"/>`;
+        });
+
+        // Uzun İşlemler (Spans - Çubuklar)
+        Object.values(spans).forEach(span => {
+            let svcIdx = services.indexOf(span.service);
+            let y = svcIdx * rowHeight + 26;
+            let leftPct = ((span.start - minTs) / totalMs);
+            let widthPct = Math.max(((span.end - span.start) / totalMs), 0.005); 
+            let x = 120 + ((svgWidth - 130) * leftPct);
+            let w = (svgWidth - 130) * widthPct;
+            svgContent += `<rect x="${x}" y="${y}" width="${w}" height="8" fill="#58a6ff" rx="2" ry="2"><title>[SPAN] ${span.name} | ${span.end - span.start}ms</title></rect>`;
+        });
+
+        // Anlık Olaylar (Events - Noktalar)
+        events.forEach(ev => {
+            let svcIdx = services.indexOf(ev.service);
+            let y = svcIdx * rowHeight + 26;
+            let leftPct = ((ev.ts - minTs) / totalMs);
+            let x = 120 + ((svgWidth - 130) * leftPct);
+            let color = (ev.severity === 'ERROR' || ev.severity === 'FATAL') ? '#f85149' : '#00ff9d';
+            // HTML tarafında tıklama (Jump) yakalayabilmek için class veriyoruz
+            svgContent += `<rect class="timeline-jump" data-idx="${ev._idx}" x="${x}" y="${y-1}" width="4" height="10" fill="${color}" rx="2" ry="2" cursor="pointer"><title>${ev.name} | +${ev.ts - minTs}ms (Click to Jump)</title></rect>`;
+        });
+
+        svgContent += `</svg>`;
 
         let timelineHtml = `
             <div style="padding: 12px; background:#161619; margin-bottom:15px; border-radius:6px; border-left:3px solid var(--accent); overflow-x:auto;">
                 <b style="color:white; font-size:11px;">⏱️ GANTT & LATENCY VISUALIZER:</b><br/>
                 <span style="color:#aaa; font-size:11px; font-family:monospace;">Total Trace Duration: ${totalMs}ms</span>
-                <div class="gantt-wrapper" style="position:relative; width:100%; min-width:300px; height:${chartHeight}px; background:#000; border:1px solid #333; margin-top:10px; font-family:'JetBrains Mono'; border-radius:4px;">
+                <div class="gantt-wrapper" style="width:100%; min-width:400px; height:${chartHeight}px; margin-top:10px; border-radius:4px; overflow:hidden; border:1px solid #333;">
+                    ${svgContent}
+                </div>
+            </div>
         `;
-
-        for(let i=0; i<=4; i++) {
-            let pct = i * 25;
-            let left = `calc(110px + (100% - 130px) * ${pct / 100})`;
-            timelineHtml += `<div style="position:absolute; top:0; bottom:0; left:${left}; width:1px; background:#222;"></div>`;
-            timelineHtml += `<div style="position:absolute; top:2px; left:${left}; color:#555; font-size:8px;">${Math.round((totalMs * pct)/100)}ms</div>`;
-        }
-
-        services.forEach((svc, i) => {
-            let y = i * rowHeight + 20;
-            let shortSvc = svc.replace('-service', '');
-            timelineHtml += `<div style="position:absolute; top:${y+6}px; left:5px; width:100px; font-size:9px; color:#888; font-weight:bold; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${svc}">${shortSvc}</div>`;
-            timelineHtml += `<div style="position:absolute; top:${y + 14}px; left:110px; right:0; height:1px; background:rgba(255,255,255,0.05);"></div>`;
-        });
-
-        Object.values(spans).forEach(span => {
-            let svcIdx = services.indexOf(span.service);
-            let y = svcIdx * rowHeight + 24;
-            let leftPct = ((span.start - minTs) / totalMs) * 100;
-            let widthPct = Math.max(((span.end - span.start) / totalMs) * 100, 0.2); 
-            let duration = span.end - span.start;
-            let left = `calc(110px + (100% - 130px) * ${leftPct / 100})`;
-            let width = `calc((100% - 130px) * ${widthPct / 100})`;
-            timelineHtml += `<div style="position:absolute; top:${y}px; left:${left}; width:${width}; height:8px; background:var(--info); border-radius:2px; box-shadow:0 0 4px var(--info); cursor:help;" title="[SPAN] ${span.name} | ${duration}ms"></div>`;
-        });
-
-        events.forEach(ev => {
-            let svcIdx = services.indexOf(ev.service);
-            let y = svcIdx * rowHeight + 24;
-            let leftPct = ((ev.ts - minTs) / totalMs) * 100;
-            let left = `calc(110px + (100% - 130px) * ${leftPct / 100})`;
-            let color = (ev.severity === 'ERROR' || ev.severity === 'FATAL') ? 'var(--danger)' : 'var(--accent)';
-            // Otonom zıplama noktası
-            timelineHtml += `<div class="timeline-jump" data-idx="${ev._idx}" style="position:absolute; top:${y-1}px; left:${left}; width:6px; height:10px; background:${color}; border-radius:3px; cursor:pointer;" title="${ev.name} | +${ev.ts - minTs}ms (Click to Jump)"></div>`;
-        });
-
-        timelineHtml += `</div></div>`;
 
         // MERMAID SEQUENCE
         let mermaidCode = `sequenceDiagram\n    autonumber\n`;

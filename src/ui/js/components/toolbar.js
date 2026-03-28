@@ -16,6 +16,13 @@ export class ToolbarComponent {
             btnExpAi: document.getElementById('btn-export-ai')
         };
 
+        // [ARCH-COMPLIANCE] Sentiric Mimari Katmanları
+        this.LAYERS = {
+            TELECOM: ['sip-sbc-service', 'sip-proxy-service', 'media-service', 'stream-gateway-service'],
+            CORE: ['sip-b2bua-service', 'dialplan-service', 'user-service', 'workflow-service', 'agent-service', 'telephony-action-service'],
+            AI: ['stt-gateway-service', 'stt-whisper-service', 'tts-gateway-service', 'tts-coqui-service', 'llm-gateway-service', 'llm-llama-service', 'dialog-service']
+        };
+
         this.bindEvents();
     }
 
@@ -25,9 +32,7 @@ export class ToolbarComponent {
         this.el.levelCheckboxes = document.querySelectorAll('.lvl-chk');
         this.el.levelCheckboxes?.forEach(chk => {
             chk.addEventListener('change', () => {
-                const selectedLevels = Array.from(this.el.levelCheckboxes)
-                    .filter(c => c.checked)
-                    .map(c => c.value);
+                const selectedLevels = Array.from(this.el.levelCheckboxes).filter(c => c.checked).map(c => c.value);
                 Store.dispatch('SET_LEVELS', selectedLevels);
             });
         });
@@ -37,14 +42,6 @@ export class ToolbarComponent {
             e.target.innerText = Store.state.controls.hideRtpNoise ? "🔇 NOISE: HIDDEN" : "🔊 NOISE: VISIBLE";
             e.target.classList.toggle('active', Store.state.controls.hideRtpNoise);
         });
-
-        // Mobil Menü (Hamburger) Butonu
-        const mobileBtn = document.getElementById('mobile-menu-btn');
-        if (mobileBtn) {
-            mobileBtn.addEventListener('click', () => {
-                document.getElementById('workspace').classList.toggle('mobile-left-open');
-            });
-        }
 
         this.el.btnPause?.addEventListener('click', (e) => {
             Store.dispatch('TOGGLE_PAUSE');
@@ -58,7 +55,6 @@ export class ToolbarComponent {
             this.matrix.wipe();
         });
 
-        // Export Dropdown Menü
         if (this.el.btnExportMain && this.el.dropdownContent) {
             this.el.btnExportMain.addEventListener('click', (e) => {
                 e.preventDefault();
@@ -70,14 +66,28 @@ export class ToolbarComponent {
             });
         }
 
+        // İsimleri UI ile uyumlu yapıyoruz
+        if(this.el.btnExpRaw) this.el.btnExpRaw.innerText = "📄 RAW JSON (DB Dump)";
+        if(this.el.btnExpAi) this.el.btnExpAi.innerText = "🕵️ FORENSIC DOSSIER (Markdown)";
+
         this.el.btnExpRaw?.addEventListener('click', (e) => { e.preventDefault(); this.exportData('raw'); });
-        this.el.btnExpAi?.addEventListener('click', (e) => { e.preventDefault(); this.exportData('ai'); });
+        this.el.btnExpAi?.addEventListener('click', (e) => { e.preventDefault(); this.exportData('dossier'); });
+
+        const mobileBtn = document.getElementById('mobile-menu-btn');
+        if (mobileBtn) {
+            mobileBtn.addEventListener('click', () => document.getElementById('workspace').classList.toggle('mobile-left-open'));
+        }
+    }
+
+    categorizeService(svcName) {
+        if (this.LAYERS.TELECOM.includes(svcName)) return "EDGE & TELECOM";
+        if (this.LAYERS.CORE.includes(svcName)) return "CORE LOGIC";
+        if (this.LAYERS.AI.includes(svcName)) return "AI ENGINES";
+        return "INFRA / OTHER";
     }
 
     exportData(type) {
         const state = Store.state;
-        
-        // [SURGICAL EXPORT]: Sadece Checkbox ile Filtrelenmiş Logları İndir
         let dataToExport = [...state.filteredLogs]; 
         
         if (dataToExport.length === 0) return alert("No data to export!");
@@ -86,26 +96,70 @@ export class ToolbarComponent {
 
         const timestamp = new Date().toISOString().replace(/:/g, '-').slice(0, -5);
         const nodeName = document.getElementById('node-name')?.innerText || 'local';
-        const activeLevels = state.controls.levelFilters.join("-");
-        const fileNameBase = `panopticon_${activeLevels}_${state.controls.lockedTraceId || 'global'}_${nodeName}_${timestamp}`;
+        const traceId = state.controls.lockedTraceId || 'Global_Capture';
+        const fileNameBase = `sentiric_forensic_${traceId}_${timestamp}`;
 
         if (type === 'raw') {
             const blob = new Blob([JSON.stringify(dataToExport, null, 2)], { type: 'application/json' });
-            this.downloadFile(blob, `${fileNameBase}_evidence.json`);
+            this.downloadFile(blob, `${fileNameBase}.json`);
             
-        } else if (type === 'ai') {
+        } else if (type === 'dossier') {
             const aiData = dataToExport.filter(l => l.event !== 'RTP_PACKET');
+            
+            let minTs = new Date(aiData[0].ts).getTime();
+            let maxTs = new Date(aiData[aiData.length-1].ts).getTime();
+            let totalMs = maxTs - minTs;
+            
+            let errors = aiData.filter(l => l.severity === "ERROR" || l.severity === "FATAL");
 
-            const lines = aiData.map(l => {
-                let cleanMsg = l.message.replace(/(\r\n|\n|\r)/gm, " ");
-                if (cleanMsg.length > 200) cleanMsg = cleanMsg.substring(0, 200) + "...";
-                return `[${l.ts.substring(11, 23)}] ${l.severity} | ${l.resource['service.name']} -> ${l.event}: ${cleanMsg}`;
+            let report = `# 🕵️ SENTIRIC SOVEREIGN FORENSIC DOSSIER\n`;
+            report += `> **Generated:** ${new Date().toISOString()}\n> **Node:** ${nodeName}\n> **Trace ID:** ${traceId}\n> **Total Duration:** ${totalMs} ms\n\n`;
+
+            // 1. EXECUTIVE SUMMARY
+            report += `## 1. Executive Summary\n`;
+            report += `- **Total Events Captured:** ${aiData.length}\n`;
+            report += `- **Critical Errors:** ${errors.length}\n`;
+            if (errors.length > 0) {
+                report += `\n### 🚨 Critical Failure Points\n`;
+                errors.forEach(e => {
+                    report += `- **[+${new Date(e.ts).getTime() - minTs}ms]** \`${e.resource['service.name']}\`: ${e.message}\n`;
+                });
+            }
+
+            // 2. ARCHITECTURAL LAYER BREAKDOWN
+            report += `\n## 2. Layer Analysis\n`;
+            let layerStats = { "EDGE & TELECOM": 0, "CORE LOGIC": 0, "AI ENGINES": 0, "INFRA / OTHER": 0 };
+            aiData.forEach(l => layerStats[this.categorizeService(l.resource['service.name'])]++);
+            
+            report += `| Layer | Events Processed | Status |\n|---|---|---|\n`;
+            Object.keys(layerStats).forEach(layer => {
+                let status = layerStats[layer] > 0 ? "Active 🟢" : "Idle ⚪";
+                report += `| **${layer}** | ${layerStats[layer]} | ${status} |\n`;
             });
 
-            const report = `# Sentiric AI Context Report\nGenerated: ${new Date().toISOString()}\nNode: ${nodeName}\nLevel Filters: ${activeLevels}\n\n## Timeline Summary\n\`\`\`log\n${lines.join('\n')}\n\`\`\`\n\n## Instructions for AI\nAnalyze the timeline above for anomalies, latency issues, or SIP protocol errors. Look specifically for 'WARN' or 'ERROR' levels.`;
+            // 3. AI GENERATION VELOCITY (Sadece LLM olanlar)
+            let aiSpans = aiData.filter(l => l._ts_start && l.event.includes('STREAM'));
+            if (aiSpans.length > 0) {
+                report += `\n## 3. AI Performance Diagnostics\n`;
+                report += `| Engine | Duration (ms) | Est. Tokens | Speed (ms/tok) |\n|---|---|---|---|\n`;
+                aiSpans.forEach(l => {
+                    const dur = new Date(l.ts).getTime() - new Date(l._ts_start).getTime();
+                    const toks = Math.max(Math.floor(l.message.length / 4), 1);
+                    report += `| \`${l.resource['service.name']}\` | ${dur} | ~${toks} | **${(dur/toks).toFixed(1)}** |\n`;
+                });
+            }
+
+            // 4. FULL EVENT TIMELINE
+            report += `\n## 4. Master Event Timeline\n\`\`\`log\n`;
+            aiData.forEach(l => {
+                let cleanMsg = l.message.replace(/(\r\n|\n|\r)/gm, " ");
+                let relMs = new Date(l.ts).getTime() - minTs;
+                report += `[+${relMs.toString().padStart(5, '0')}ms] [${l.severity}] ${l.resource['service.name']} -> ${l.event}: ${cleanMsg}\n`;
+            });
+            report += `\`\`\`\n\n--- END OF REPORT ---`;
             
             const blob = new Blob([report], { type: 'text/markdown' });
-            this.downloadFile(blob, `${fileNameBase}_report.md`);
+            this.downloadFile(blob, `${fileNameBase}.md`);
         }
         
         if (this.el.dropdownContent) this.el.dropdownContent.style.display = 'none';
@@ -114,9 +168,8 @@ export class ToolbarComponent {
     downloadFile(blob, filename) {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        a.click();
+        a.href = url; a.download = filename;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
         URL.revokeObjectURL(url);
     }
 }
