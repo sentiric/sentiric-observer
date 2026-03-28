@@ -9,36 +9,30 @@ export class TraceListComponent {
         this.el = {
             workspace: document.getElementById('workspace'),
             list: document.getElementById('trace-list'),
-            // Footer'daki butonu artık kullanmıyoruz, silebilirsin
             locatorHeader: document.querySelector('#trace-locator .pane-header'),
-            headerTitle: document.querySelector('#trace-locator .pane-header > span'), // Başlık alanı
-            footer: document.querySelector('#trace-locator .pane-footer') // Footer alanı
+            headerTitle: document.querySelector('#trace-locator .pane-header > span'),
         };
-
-        // Footer'ı tamamen gizle (CSS ile de yapılabilir ama garanti olsun)
-        if (this.el.footer) this.el.footer.style.display = 'none';
 
         this.injectHeaderControls();
         this.bindEvents();
     }
 
+    // ... (injectHeaderControls aynı kalabilir)
     injectHeaderControls() {
         if (!this.el.locatorHeader) return;
         
-        // 1. Sağ taraf kontrol grubu
         const controls = document.createElement('div');
         controls.className = 'header-controls';
         controls.style.display = 'flex';
         controls.style.gap = '8px';
         controls.style.alignItems = 'center';
 
-        // 2. UNLOCK (Geri Dön) Butonu - Başlangıçta gizli
         this.unlockBtn = document.createElement('button');
         this.unlockBtn.innerHTML = '✕';
         this.unlockBtn.className = 'icon-btn';
         this.unlockBtn.title = "Unlock Stream (Show All)";
         this.unlockBtn.style.color = 'var(--accent)';
-        this.unlockBtn.style.display = 'none'; // Sadece kilitliyken görünür
+        this.unlockBtn.style.display = 'none'; 
         
         this.unlockBtn.onclick = (e) => {
             e.stopPropagation();
@@ -46,8 +40,6 @@ export class TraceListComponent {
         };
         controls.appendChild(this.unlockBtn);
 
-        // 3. TRASH (Temizle) Butonu - Mevcut butonu bul ve onar
-        // Eğer HTML'de varsa onu al, yoksa yeni yarat
         let trashBtn = this.el.locatorHeader.querySelector('#btn-clear-traces');
         if (!trashBtn) {
             trashBtn = document.createElement('button');
@@ -56,7 +48,6 @@ export class TraceListComponent {
             trashBtn.innerHTML = '🗑';
             trashBtn.title = "Clear All Traces";
         }
-        // Event Listener'ı burada ekle (Garanti çalışır)
         trashBtn.onclick = (e) => {
             e.stopPropagation();
             if(confirm("Clear all logs and traces?")) {
@@ -65,7 +56,6 @@ export class TraceListComponent {
         };
         controls.appendChild(trashBtn);
 
-        // 4. TOGGLE (Sidebar Aç/Kapa) Butonu
         const toggleBtn = document.createElement('button');
         toggleBtn.innerHTML = '◀';
         toggleBtn.className = 'icon-btn';
@@ -75,8 +65,6 @@ export class TraceListComponent {
             e.stopPropagation();
             const isCollapsed = this.el.workspace.classList.toggle('left-collapsed');
             toggleBtn.innerHTML = isCollapsed ? '▶' : '◀';
-            
-            // Başlık ve butonları gizle/göster mantığı CSS'te (layout.css) var zaten
             if(this.inspector) this.inspector.isLeftMenuOpen = !isCollapsed;
         };
         controls.appendChild(toggleBtn);
@@ -88,7 +76,6 @@ export class TraceListComponent {
         if (!this.el.list) return;
 
         this.el.list.addEventListener('click', (e) => {
-            // A. PLAY BUTONU (Sadece media-service logları için çalışır)
             const playBtn = e.target.closest('.btn-play-trace');
             if (playBtn) {
                 e.stopPropagation();
@@ -104,10 +91,8 @@ export class TraceListComponent {
                         playBtn.style.color = 'var(--accent)';
                     })
                     .catch((err) => {
-                        console.warn("Audio Play Error:", err);
-                        // Kullanıcıya görsel geri bildirim ver
                         playBtn.innerHTML = '❌'; 
-                        playBtn.title = "Audio not found for this trace (Check Raw Packets)";
+                        playBtn.title = "Audio not found for this trace";
                         setTimeout(() => {
                              playBtn.innerHTML = originalHTML;
                              playBtn.style.color = 'var(--accent)';
@@ -116,11 +101,9 @@ export class TraceListComponent {
                 return;
             }
 
-            // B. TRACE SEÇİMİ
             const item = e.target.closest('.trace-item');
             if (item) {
                 Store.dispatch('LOCK_TRACE', item.dataset.tid);
-                // Inspector'ı tetikle
                 if(this.inspector) this.inspector.renderTimeline(); 
             }
         });
@@ -129,8 +112,6 @@ export class TraceListComponent {
     render(state) {
         if (!this.el.list) return;
 
-        // --- HEADER YÖNETİMİ ---
-        // Eğer bir trace kilitliyse başlığı değiştir ve X butonunu göster
         const lockedId = state.controls.lockedTraceId;
         if (lockedId) {
             if (this.el.headerTitle) {
@@ -146,8 +127,19 @@ export class TraceListComponent {
             if (this.unlockBtn) this.unlockBtn.style.display = 'none';
         }
         
-        // --- LİSTE RENDER ---
-        const traces = Array.from(state.activeTraces.entries()).reverse().slice(0, 50);
+        // --- V14.0 HEALTH RADAR SORTING ---
+        // Sadece son eklenenlere göre değil, Urgency Score (Hata sayısı) olanları üste çıkar.
+        const traces = Array.from(state.activeTraces.entries())
+            .sort((a, b) => {
+                // Eğer urgency skorları farklıysa, yüksek olan üste
+                if (b[1].urgencyScore !== a[1].urgencyScore) {
+                    return b[1].urgencyScore - a[1].urgencyScore;
+                }
+                // Eşitse en son gelen üste
+                return new Date(b[1].start) - new Date(a[1].start);
+            })
+            .slice(0, 50);
+
         let html = '';
         
         for (let i = 0; i < traces.length; i++) {
@@ -159,11 +151,25 @@ export class TraceListComponent {
                 ? `<button class="icon-btn btn-play-trace" style="color:var(--accent); font-size:14px; padding:0 6px; margin-right:5px; border:1px solid #333;" title="Play Audio (Media Logs Only)">▶</button>` 
                 : '';
 
-            html += `<div class="trace-item ${isActive}" data-tid="${tid}">
+            // Aciliyet (Health) Göstergeleri
+            const errorBadge = data.errorCount > 0 
+                ? `<span style="background:var(--danger); color:#fff; padding:2px 4px; border-radius:3px; font-size:8px; margin-right:5px; font-weight:bold;">${data.errorCount} ERR</span>` 
+                : '';
+                
+            const warnBadge = data.warnCount > 0 
+                ? `<span style="background:var(--warn); color:#000; padding:2px 4px; border-radius:3px; font-size:8px; margin-right:5px; font-weight:bold;">${data.warnCount} WRN</span>` 
+                : '';
+
+            // Hata varsa arkaplana hafif kırmızı bir glow verelim
+            const errorGlow = data.errorCount > 0 ? 'background: rgba(248, 81, 73, 0.05); border-left: 2px solid var(--danger);' : '';
+
+            html += `<div class="trace-item ${isActive}" data-tid="${tid}" style="${errorGlow}">
                 <div class="tid">${tid.substring(0, 24)}...</div>
                 <div class="t-meta">
                     <span>${time}</span>
                     <span style="display:flex; align-items:center;">
+                        ${errorBadge}
+                        ${warnBadge}
                         ${audioBtnHtml}
                         <span>${data.count} pkts</span>
                     </span>

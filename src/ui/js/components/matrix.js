@@ -1,4 +1,4 @@
-// sentiric-observer/src/ui/js/components/matrix.js
+// src/ui/js/components/matrix.js
 import { Store } from '../store.js';
 
 export class MatrixComponent {
@@ -48,7 +48,26 @@ export class MatrixComponent {
     render(state) {
         if (!this.el.matrix) return;
 
-        // [KRİTİK DÜZELTME]: Filtre değiştiyse ekranı baştan çiz
+        // 1. SURGICAL UPDATE (Noktasal Güncelleme - LLM Streaming için)
+        if (state.controls.dirtyLogs.size > 0 && !state.controls.forceRender) {
+            state.controls.dirtyLogs.forEach(idx => {
+                const rowEl = this.el.matrix.querySelector(`.log-row[data-idx="${idx}"]`);
+                if (rowEl) {
+                    const log = state.rawLogs.find(l => l._idx === idx);
+                    if (log) {
+                        const msgCell = rowEl.querySelector('.message-text');
+                        if (msgCell) msgCell.innerHTML = this.escapeHtml(log.message);
+                        
+                        // İsteğe bağlı: Token aktığını göstermek için hafif bir flash efekti eklenebilir.
+                        msgCell.style.color = "var(--accent)";
+                        setTimeout(() => msgCell.style.color = "#999", 50);
+                    }
+                }
+            });
+            return; // Sadece dirty update yapıldıysa yeni render'a gerek yok.
+        }
+
+        // 2. FULL RENDER veya YENİ SATIR EKLENMESİ
         if (state.controls.forceRender) {
             this.wipe();
             state.controls.forceRender = false;
@@ -95,10 +114,12 @@ export class MatrixComponent {
 
         this.el.matrix.appendChild(fragment);
 
+        // VDOM Limit - DOM'un şişmesini engeller
         while (this.el.matrix.children.length > 500) {
             this.el.matrix.removeChild(this.el.matrix.firstChild);
         }
 
+        // Selection Management
         const prevSelected = this.el.matrix.querySelector('.log-row.selected');
         if (prevSelected && prevSelected.dataset.idx != state.controls.selectedLogIdx) {
             prevSelected.classList.remove('selected');
@@ -109,6 +130,7 @@ export class MatrixComponent {
         }
         this.selectionChanged = false;
 
+        // Auto Scroll
         if (!state.status.isPaused && this.shouldScroll && this.el.scroller) {
             this.el.scroller.scrollTop = this.el.scroller.scrollHeight;
         }
