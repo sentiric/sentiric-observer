@@ -66,10 +66,14 @@ export class InspectorComponent {
         this.el.rtpCard.appendChild(btnRow);
     }
 
+    // 1. Matrix referansını almak için metod (Bunu app.js'ten çağıracağız)
+    setMatrix(matrixComponent) {
+        this.matrix = matrixComponent;
+    }
+
+    // 2. Timeline tıklama olaylarını dinlemek için bindEvents'e ek:
     bindEvents() {
         this.el.btnCloseInsp?.addEventListener('click', () => {
-            // Sağ menü kapanırken workspace'i doğru konuma getirmeli. 
-            // Bunun için app.js veya trace_list üzerinden durumu almalıyız.
             const isLeftOpen = document.getElementById('trace-list').style.display !== 'none';
             this.close(isLeftOpen);
         });
@@ -83,15 +87,26 @@ export class InspectorComponent {
                 if (btn.dataset.tab === 'view-timeline') this.renderTimeline();
             });
         });
+
+        // [YENİ] Timeline Jump Event Delegation
+        this.el.timelineFlow?.addEventListener('click', (e) => {
+            const jumpEl = e.target.closest('.timeline-jump');
+            if (jumpEl && jumpEl.dataset.idx) {
+                const idx = parseFloat(jumpEl.dataset.idx);
+                if (this.matrix) {
+                    // Matrix'e kaydır
+                    this.matrix.scrollToLog(idx);
+                }
+            }
+        });
     }
 
-open(idx) {
+    // 3. AI Diagnostics'i göstermek için open() metoduna eklenti:
+    open(idx) {
         const log = Store.state.rawLogs.find(l => l._idx === idx);
         if (!log) return;
 
-        // JS ile grid ölçüsü vermek yok, sadece CSS Class ekliyoruz!
         this.el.workspace.classList.add('inspector-open');
-            
         this.el.inspPlaceholder.style.display = 'none';
         this.el.inspContent.style.display = 'block';
 
@@ -100,10 +115,41 @@ open(idx) {
         const tid = log.trace_id || log.attributes?.['sip.call_id'];
         if (this.el.detTrace) this.el.detTrace.innerText = tid || 'No Trace ID attached';
         
+        // --- [YENİ] AI DIAGNOSTICS CALCULATOR ---
+        let aiDiagnosticsHtml = '';
+        if (log._ts_start && log.event.includes('STREAM')) {
+            const startMs = new Date(log._ts_start).getTime();
+            const endMs = new Date(log.ts).getTime();
+            const duration = endMs - startMs;
+            
+            // Kaba bir hesap: 1 Token yaklaşık 4 karakterdir (İngilizce/Türkçe ortalaması)
+            const approxTokens = Math.max(Math.floor(log.message.length / 4), 1);
+            const msPerToken = (duration / approxTokens).toFixed(1);
+            const tokenSpeed = (1000 / (duration / approxTokens)).toFixed(1);
+
+            let speedColor = "var(--accent)"; // İyi
+            if (msPerToken > 100) speedColor = "var(--warn)"; // Yavaş
+            if (msPerToken > 250) speedColor = "var(--danger)"; // Kabul edilemez
+
+            aiDiagnosticsHtml = `
+                <div class="data-card" style="border-left: 3px solid ${speedColor};">
+                    <div class="card-label" style="color:${speedColor}">🧠 AI GENERATION VELOCITY</div>
+                    <div class="m-row"><span class="k">Duration:</span> <span class="v">${duration} ms</span></div>
+                    <div class="m-row"><span class="k">Est. Tokens:</span> <span class="v">~${approxTokens}</span></div>
+                    <div class="m-row"><span class="k">Speed:</span> <span class="v" style="color:${speedColor}; font-weight:bold;">${msPerToken} ms/token (${tokenSpeed} t/s)</span></div>
+                </div>
+            `;
+        }
+        
         const safeAttrs = { ...log.attributes };
         if (safeAttrs['rtp.audio_b64']) safeAttrs['rtp.audio_b64'] = "[BASE64_AUDIO_DATA_HIDDEN]";
-        if (this.el.detJson) this.el.detJson.innerText = JSON.stringify(safeAttrs, null, 2);
+        
+        if (this.el.detJson) {
+            // Json viewer'ın üstüne AI diagostics'i ekle
+            this.el.detJson.innerHTML = aiDiagnosticsHtml + JSON.stringify(safeAttrs, null, 2);
+        }
 
+        // RTP Card mantığı (Öncekiyle aynı)
         const isRtp = log.event === "RTP_PACKET" || log.smart_tags?.includes('RTP');
         if (this.el.rtpCard) {
             this.el.rtpCard.style.display = isRtp ? 'block' : 'none';
@@ -111,20 +157,56 @@ open(idx) {
                 if (this.el.rtpPt) this.el.rtpPt.innerText = log.attributes['rtp.payload_type'] || '-';
                 if (this.el.rtpSeq) this.el.rtpSeq.innerText = log.attributes['rtp.sequence'] || '-';
                 if (this.el.rtpLen) this.el.rtpLen.innerText = (log.attributes['net.packet_len'] || 0) + 'B';
-                
                 const hasAudio = !!log.attributes['rtp.audio_b64'];
                 this.btnPlay.style.display = hasAudio ? 'block' : 'none';
-
-                setTimeout(() => {
-                    this.viz.resize(); 
-                    this.viz.start();
-                }, 50);
+                setTimeout(() => { this.viz.resize(); this.viz.start(); }, 50);
             } else {
                 this.viz.stop();
             }
         }
         this.renderTimeline();
     }
+
+    open(idx) {
+            const log = Store.state.rawLogs.find(l => l._idx === idx);
+            if (!log) return;
+
+            // JS ile grid ölçüsü vermek yok, sadece CSS Class ekliyoruz!
+            this.el.workspace.classList.add('inspector-open');
+                
+            this.el.inspPlaceholder.style.display = 'none';
+            this.el.inspContent.style.display = 'block';
+
+            if (this.el.detTs) this.el.detTs.innerText = log.ts || 'N/A';
+            if (this.el.detNode) this.el.detNode.innerText = log.resource?.['host.name'] || 'N/A';
+            const tid = log.trace_id || log.attributes?.['sip.call_id'];
+            if (this.el.detTrace) this.el.detTrace.innerText = tid || 'No Trace ID attached';
+            
+            const safeAttrs = { ...log.attributes };
+            if (safeAttrs['rtp.audio_b64']) safeAttrs['rtp.audio_b64'] = "[BASE64_AUDIO_DATA_HIDDEN]";
+            if (this.el.detJson) this.el.detJson.innerText = JSON.stringify(safeAttrs, null, 2);
+
+            const isRtp = log.event === "RTP_PACKET" || log.smart_tags?.includes('RTP');
+            if (this.el.rtpCard) {
+                this.el.rtpCard.style.display = isRtp ? 'block' : 'none';
+                if (isRtp && log.attributes) {
+                    if (this.el.rtpPt) this.el.rtpPt.innerText = log.attributes['rtp.payload_type'] || '-';
+                    if (this.el.rtpSeq) this.el.rtpSeq.innerText = log.attributes['rtp.sequence'] || '-';
+                    if (this.el.rtpLen) this.el.rtpLen.innerText = (log.attributes['net.packet_len'] || 0) + 'B';
+                    
+                    const hasAudio = !!log.attributes['rtp.audio_b64'];
+                    this.btnPlay.style.display = hasAudio ? 'block' : 'none';
+
+                    setTimeout(() => {
+                        this.viz.resize(); 
+                        this.viz.start();
+                    }, 50);
+                } else {
+                    this.viz.stop();
+                }
+            }
+            this.renderTimeline();
+        }
 
     close() {
         Store.dispatch('SELECT_LOG', null);
@@ -236,15 +318,21 @@ open(idx) {
             timelineHtml += `<div style="position:absolute; top:${y}px; left:${left}; width:${width}; height:8px; background:var(--info); border-radius:2px; box-shadow:0 0 4px var(--info); cursor:help;" title="[SPAN] ${span.name} | ${duration}ms"></div>`;
         });
 
-        // Event Çizimleri (span_id olmayan anlık loglar - Noktalar)
+    // 4. Render Timeline Güncellemesi (class eklemeleri)
+    // Sadece Events Çizim Döngüsünü değiştiriyoruz:
+    // Mevcut `events.forEach` bloğunu bununla değiştirin:
+    /*
         events.forEach(ev => {
             let svcIdx = services.indexOf(ev.service);
             let y = svcIdx * rowHeight + 24;
             let leftPct = ((ev.ts - minTs) / totalMs) * 100;
             let left = `calc(110px + (100% - 130px) * ${leftPct / 100})`;
             let color = (ev.severity === 'ERROR' || ev.severity === 'FATAL') ? 'var(--danger)' : 'var(--accent)';
-            timelineHtml += `<div style="position:absolute; top:${y}px; left:${left}; width:4px; height:8px; background:${color}; border-radius:2px; cursor:help;" title="${ev.name} | +${ev.ts - minTs}ms"></div>`;
+            
+            // [YENİ] class="timeline-jump" ve data-idx="${ev._idx}" eklendi
+            timelineHtml += `<div class="timeline-jump" data-idx="${ev._idx}" style="position:absolute; top:${y}px; left:${left}; width:6px; height:10px; background:${color}; border-radius:3px; cursor:pointer;" title="${ev.name} | +${ev.ts - minTs}ms (Click to Jump)"></div>`;
         });
+    */
 
         timelineHtml += `</div></div>`;
 

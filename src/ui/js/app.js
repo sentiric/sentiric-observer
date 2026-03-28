@@ -31,6 +31,9 @@ const App = {
         this.matrix = new MatrixComponent(this.inspector, this.traceList);
         this.toolbar = new ToolbarComponent(this.matrix);
 
+        // [YENİ] Inspector'a Matrix yeteneğini veriyoruz (Jump-to-row için)
+        this.inspector.setMatrix(this.matrix)        
+
         // 3. Render Döngüsü (60FPS Frame Throttling)
         Store.subscribe((state) => {
             if (!this.renderPending) {

@@ -40,34 +40,31 @@ export const Store = {
                 
                 const logs = payload;
                 logs.forEach(log => {
-                    // --- V14.0 SMART FOLDING (AI TOKEN COLLAPSE) ---
-                    // Eğer bu log bir span parçasıysa (LLM/STT/CHUNK/STREAM) DOM'u kurtar.
                     if (log.span_id && (log.event.includes('STREAM') || log.event.includes('CHUNK') || log.event.includes('TOKEN'))) {
                         const existingLog = this.state.rawLogs.find(l => l.span_id === log.span_id && l.event === log.event);
                         if (existingLog) {
-                            // Token'ı mevcut cümleye ekle
-                            existingLog.message += log.message;
-                            existingLog.ts = log.ts; // Son token geliş zamanı
+                            // [YENİ]: Token hızını ölçmek için ilk paketin geliş zamanını kaydet
+                            if (!existingLog._ts_start) existingLog._ts_start = existingLog.ts;
                             
-                            // DOM'da sadece bu satırın güncellenmesi için işaretle
+                            existingLog.message += log.message;
+                            existingLog.ts = log.ts; 
+                            
                             this.state.controls.dirtyLogs.add(existingLog._idx);
-                            this.extractTrace(existingLog); // Trace istatistiklerini güncelle
-                            return; // Yeni satır açmadan çık.
+                            this.extractTrace(existingLog);
+                            return; 
                         }
                     }
 
-                    // Standart işlem (Yeni satır)
                     if (!log._idx) log._idx = Date.now() + Math.random();
                     this.state.rawLogs.push(log);
                     this.state.status.pps++;
                     this.extractTrace(log);
                 });
 
-                // Hafıza Temizliği (Eskileri Uçur)
                 if (this.state.rawLogs.length > CONFIG.MAX_LOGS) {
                     const excess = this.state.rawLogs.length - CONFIG.MAX_LOGS;
                     this.state.rawLogs.splice(0, excess);
-                    this.state.controls.forceRender = true; // Liste kırpıldığı için tam render şart
+                    this.state.controls.forceRender = true; 
                 }
 
                 shouldRender = this.applyFilters();

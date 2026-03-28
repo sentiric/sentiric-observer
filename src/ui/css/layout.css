@@ -161,3 +161,22 @@ h1, h2, h3 { margin: 0; }
 #workspace.left-collapsed .header-controls {
     gap: 0 !important;
 }
+
+/* --- V14.0 HIGHLIGHT PULSE ANIMATION --- */
+@keyframes pulse-bg {
+    0% { background: rgba(0, 255, 157, 0.6); }
+    100% { background: transparent; }
+}
+
+.highlight-pulse {
+    animation: pulse-bg 2s ease-out;
+    border-left: 3px solid var(--accent) !important;
+}
+
+.timeline-jump {
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+.timeline-jump:hover {
+    transform: scale(1.5);
+    box-shadow: 0 0 10px #fff;
+}

@@ -140,4 +140,30 @@ export class MatrixComponent {
         if(this.el.matrix) this.el.matrix.innerHTML = '';
         this.lastRenderedIdx = -1;
     }
+
+    // src/ui/js/components/matrix.js içine eklenecek yeni metod (sınıfın içine):
+    scrollToLog(idx) {
+        if (!this.el.matrix || !this.el.scroller) return;
+
+        const row = this.el.matrix.querySelector(`.log-row[data-idx="${idx}"]`);
+        if (row) {
+            // Önceki animasyonu temizle
+            const prev = this.el.matrix.querySelector('.highlight-pulse');
+            if (prev) prev.classList.remove('highlight-pulse');
+
+            // Otonom kaydırmayı geçici olarak durdur (operatör inceliyor)
+            this.shouldScroll = false;
+
+            // Elementi ekranın ortasına kaydır
+            row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            
+            // Animasyon sınıfını ekle
+            row.classList.add('highlight-pulse');
+            
+            // Satırı seçili hale getir
+            Store.dispatch('SELECT_LOG', idx);
+            
+            setTimeout(() => row.classList.remove('highlight-pulse'), 2000);
+        }
+    }    
 }
