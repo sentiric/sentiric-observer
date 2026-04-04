@@ -1,2 +1,2 @@
-pub mod routes;
-pub mod grpc; // İleride dolduracağız
+pub mod grpc;
+pub mod routes; // İleride dolduracağız

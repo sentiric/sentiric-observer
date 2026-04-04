@@ -1,5 +1,5 @@
-use regex::Regex;
 use lazy_static::lazy_static;
+use regex::Regex;
 
 lazy_static! {
     // Bu artık kullanılmıyor ancak gelecekte ham SIP ayrıştırma için

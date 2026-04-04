@@ -1,2 +1,2 @@
-pub mod domain;
-pub mod aggregator; // <--- EKLENDİ
+pub mod aggregator;
+pub mod domain; // <--- EKLENDİ

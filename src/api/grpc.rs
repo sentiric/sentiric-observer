@@ -1,7 +1,7 @@
 // src/api/grpc.rs
 use crate::core::domain::LogRecord;
-use tonic::{Request, Response, Status};
 use tokio::sync::mpsc;
+use tonic::{Request, Response, Status};
 
 pub mod observer_proto {
     tonic::include_proto!("sentiric.observer.v1");
@@ -32,9 +32,12 @@ impl ObserverService for GrpcServerState {
             }
         };
 
-        log.attributes.insert("source".to_string(), serde_json::Value::String("grpc".to_string()));
+        log.attributes.insert(
+            "source".to_string(),
+            serde_json::Value::String("grpc".to_string()),
+        );
         log.smart_tags.push("GRPC".to_string());
-        log.smart_tags.push("REMOTE".to_string()); 
+        log.smart_tags.push("REMOTE".to_string());
 
         if let Err(e) = self.tx.send(log).await {
             tracing::error!(event="GRPC_CHANNEL_FULL", error=%e, "gRPC Ingest Error (Channel Closed/Full)");

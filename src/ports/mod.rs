@@ -1,7 +1,7 @@
 // src/ports/mod.rs
 use crate::core::domain::LogRecord;
-use async_trait::async_trait;
 use anyhow::Result;
+use async_trait::async_trait;
 
 #[async_trait]
 pub trait LogIngestor {

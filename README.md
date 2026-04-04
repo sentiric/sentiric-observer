@@ -1,201 +1,27 @@
-# 👁️ SENTIRIC PANOPTICON (v12.0)
+# 👁️ Sentiric Observer (Panopticon)
 
-[![Status](https://img.shields.io/badge/status-production_ready-neon_green.svg)]()
-[![Edition](https://img.shields.io/badge/edition-SOVEREIGN_BLACK_BOX-blueviolet.svg)]()
-[![Architecture](https://img.shields.io/badge/arch-Hexagonal_Rust-orange.svg)]()
+[![Status](https://img.shields.io/badge/status-active-neon_green.svg)]()
+[![Edition](https://img.shields.io/badge/edition-Sovereign_Black_Box-blueviolet.svg)]()
 
-> **"Görmediğinizi Yönetemezsiniz. Kanıtlayamadığınızı Çözemezsiniz."**
+**Sentiric Observer**, platformun merkezi gözlemlenebilirlik ve adli tıp (Forensics) aracıdır. Uygulama loglarını (SUTS v4.0) ve ağ trafiğini (PCAP Sniffing) gerçek zamanlı birleştirerek uçtan uca izleme sağlar.
 
-**Sentiric Panopticon**, dağıtık telekomünikasyon sistemleri için tasarlanmış, **Askeri Sınıf (Military-Grade)** bir Gözlemlenebilirlik ve Adli Tıp (Forensics) platformudur.
+## 🚀 Hızlı Başlangıç
 
-Sıradan log toplayıcıların aksine; uygulama loglarını, ağ paketlerini (PCAP) ve altyapı metriklerini **gerçek zamanlı (Real-Time)** olarak birleştirir ve tek bir "Hakikat Kaynağı" (Source of Truth) sunar.
-
----
-
-## 💎 Temel Yetenekler (Core Capabilities)
-
-### 1. 🛰️ Tactical Wire Interceptor (Ağ İstihbaratı)
-Ağ kartını (NIC) dinleyen gömülü bir **Sniffer** motoruna sahiptir. UI üzerinden tek bir anahtarla açılıp kapatılabilir.
-*   **SIP Capture:** Sinyalleşme trafiğini anlık yakalar.
-*   **RTP Analysis:** Ses paketlerinin akışını, Jitter ve Packet Loss değerlerini donanım seviyesinde ölçer.
-
-### 2. 🔍 Trace Locking & Isolation (Moleküler İzleme)
-Saniyede binlerce log aksa bile, tek bir `Call-ID`'ye tıklayarak sistemi **kilitler**. Gürültüyü tamamen siler ve sadece o çağrının yaşam döngüsünü gösterir.
-
-### 3. 🧬 Causality Timeline (Nedensellik Zaman Çizelgesi)
-Bir çağrının doğumundan ölümüne kadar geçen süreci (SIP -> Auth -> Routing -> Media -> Billing) milisaniye hassasiyetinde görsel bir film şeridine dönüştürür. Hatanın hangi mikrosaniyede ve hangi serviste oluştuğunu ispatlar.
-
-### 4. 📦 Forensic Export Engine (Adli Raporlama)
-İki farklı modda veri dışa aktarımı sağlar:
-*   **Raw Evidence (.json):** Mahkeme veya teknik analiz için ham veri dökümü.
-*   **AI Context Report (.md):** LLM'ler (Claude/GPT) için optimize edilmiş, olay örgüsünü anlatan akıllı rapor.
-
----
-
-## 🖥️ Arayüz Mimarisi (The Cockpit)
-
-Sistem, verimlilik için **3 Panelli IDE** düzeninde çalışır:
-
-| Panel | Görev |
-| :--- | :--- |
-| **SOL (Trace Explorer)** | Aktif çağrıları ve işlemleri listeler. Yeni bir çağrı geldiğinde otomatik güncellenir. |
-| **ORTA (Matrix)** | Akan verinin (Loglar + Paketler) canlı matrisidir. Akıllı Scroll ve Renkli Etiketleme içerir. |
-| **SAĞ (Inspector)** | Derin analiz. Ham Payload, JSON detayları, RTP Grafikleri ve Timeline burada bulunur. |
-
----
-
-
----
-
-## 📚 Dokümantasyon (The Constitution)
-
-Bu proje rastgele kodlanmamıştır. Aşağıdaki standartlara sıkı sıkıya bağlıdır:
-
-| Belge | Açıklama |
-| :--- | :--- |
-| 📜 **[SUTS v4.0 Standardı](docs/01_SENTIRIC_TELEMETRY_STANDARD_SUTS_v4.md)** | Tüm servislerin uyması gereken JSON Log Şeması ve Kuralları. |
-| 🏗️ **[Mimari Blueprint](docs/03_OBSERVER_ARCHITECTURE_BLUEPRINT_v4.md)** | Sistemin Hexagonal yapısı, Actor Modeli ve Veri Akışı. |
-| 🛠️ **[Implementation Guide](docs/02_LANGUAGE_IMPLEMENTATION_GUIDE_v1.md)** | Rust, Go, Python ve Node.js için entegrasyon rehberi. |
-| 🗺️ **[Yol Haritası](docs/04_PROJECT_EXECUTION_ROADMAP.md)** | Faz faz geliştirme planı ve hedefler. |
-| 🗺️ **[Policy](docs/05_PLATFORM_GOVERNANCE_AND_EVOLUTION_POLICY)** | Kuralları tanımlar. |
-
----
-
-## 🏗️ Sistem Mimarisi (High-Level)
-
-```mermaid
-graph LR
-    A[Microservices] -- JSON Log Stream --> B(Ingestion Adapters)
-    N[Network Traffic] -- PCAP --> B
-    B --> C{Schema Validator}
-    C -- Valid --> D[Core Domain / Aggregator]
-    C -- Invalid --> X[Dead Letter Queue]
-    D --> E[Export Adapters]
-    E --> F((WebSocket UI))
-    E --> G[(External Storage / Loki)]
-```
-
----
-
-## 🛠️ Kurulum ve Çalıştırma
-
-### Gereksinimler
-*   Docker & Docker Compose
-*   Rust 1.75+ (Geliştirme için)
-
-### Hızlı Başlat (Production Mode)
-
-
-`sentiric-infrastructure` içinde bu servisi şu şekilde tanımlayın:
-
-```yaml
-observer-service:
-  image: ghcr.io/sentiric/sentiric-observer:latest
-  container_name: observer-service
-  volumes:
-    - /var/run/docker.sock:/var/run/docker.sock
-  environment:
-      # --- Global ---
-    - ENV=production
-    - LOG_LEVEL=info
-    - LOG_FORMAT=json
-    - RUST_LOG=info
-    
-    # --- Network ---
-    # - OBSERVER_SERVICE_IPV4_ADDRESS=10.88.11.7
-    - OBSERVER_SERVICE_HTTP_PORT=11070
-    - OBSERVER_SERVICE_GRPC_PORT=11071
-    - OBSERVER_SERVICE_METRICS_PORT=11072
-    - OBSERVER_SERVICE_HOST=observer-service
-        
-    # ---
-    # Bu servis hariç tutulacak mı? Hayır
-    - SERVICE_IGNORE=false
-    # Başka observer stream akıt ( yada ana observer'a)
-    # Boş ise sadece kendisi aktif
-    # - UPSTREAM_OBSERVER_URL=http://master-node-or-ip:11081
-    - UPSTREAM_OBSERVER_URL=
-
-    # SNIFFER AKTİVASYONU
-    - SNIFFER_ENABLED=true # UI Aracılıgıyla kapatılabilir
-    - SNIFFER_INTERFACE=any  # eth0, ens192 vb # Ui aracılığı ile seçilebilir
-    - SNIFFER_FILTER=udp port 13084 or udp portrange 50000-50100
-    # Boş bırıkılnca sniffer kapalıdır.
-    # UI arabiriminden yönetilebilir
-    
-    # !Farklı node larda filreleme örnekleri
-
-    # e2 micro gibi makinelerde sniffer performansı etkilebilir?
-    # sbc sip port and proxy sip port and sbc relay rtp port range
-    # - SNIFFER_FILTER=udp port 5060 or udp port 13074 or udp portrange 30000-30010
-
-    # # b2bua sip port and media service rtp port range
-    # - SNIFFER_FILTER=udp port 13084 or udp portrange 50000-50100    
-    
-    - MAX_ACTIVE_SESSIONS=50000     # RAM'e göre artırılabilir
-    - SESSION_TTL_SECONDS=600       # 10 dakika sonra unut
-
-
-  #   networks:
-  #     sentiric-net:
-  #       ipv4_address: 10.88.11.8
-
-  # [KRİTİK]: Host ağını kullan (Sniffing için şart)
-  # Bu sayede host üzerindeki eth0, tailscale0 vb. her şeyi görür.
-  network_mode: host
-
-  # Cap Add, host mode kullanıldığı için Linux'ta genelde gerekmeyebilir ama garanti olsun
-  cap_add:
-    - NET_ADMIN
-    - NET_RAW  
-  
-  ports:
-    - "11080:11080" # HTTP Port
-    - "11081:11081" # GRPC POrt
-    - "11082:11082" # Metric Port
-  restart: always
-```
-
-### Geliştirici Modu (Dev)
-
+### 1. Çalıştırma (Docker)
 ```bash
-# 1. Projeyi derle
-cargo build --release
-
-# 2. Çalıştır onerılen 
-./target/release/sentiric-observer
-```
-Yetkilendir
-```bash
-sudo setcap cap_net_admin,cap_net_raw+eip ./target/release/sentiric-observer
+# Docker socket erişimi ve Host Network modu sniffing için şarttır
+docker run -d \
+  --network host \
+  --cap-add NET_ADMIN \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  ghcr.io/sentiric/sentiric-observer:latest
 ```
 
-Çalıştır.
+### 2. Erişim
+* **Dashboard (UI):** http://localhost:11070
+* **Metrics:** http://localhost:11072/metrics
 
-```bash
-RUST_LOG=info \
-LOG_FORMAT=json \
-SNIFFER_ENABLED=true \
-SNIFFER_INTERFACE=any \
-SNIFFER_FILTER="udp port 13084 or udp portrange 50000-50100" \
-./target/release/sentiric-observer
-
-```
-
----
-
-## 🔌 Portlar ve Erişim
-
-*   **UI Dashboard:** `http://localhost:11070`
-*   **gRPC Ingest:** `0.0.0.0:11071`
-*   **Metrics:** `http://localhost:11072/metrics`
-
----
-
-## 🛡️ Lisans ve Katkı
-
-Bu proje **Sentiric Core Team** tarafından geliştirilmektedir.
-Standartlara katkıda bulunmak için lütfen önce [RFC Sürecini](docs/) inceleyin.
-
----
-© 2026 Sentiric Platform | *Observability for the Sovereign Cloud*
+## 🏛️ Mimari ve Mantık
+* **Geliştirici Kuralları:** Gizli [.context.md](.context.md) dosyasını inceleyin.
+* **Adli Analiz Algoritmaları:** Trace Locking, PCAP Interceptor ve Aggregator mantığı için [LOGIC.md](LOGIC.md) dosyasını okuyun.
+* **Sistem Topolojisi:** Global konum [sentiric-spec](https://github.com/sentiric/sentiric-spec) içindedir.

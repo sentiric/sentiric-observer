@@ -4,7 +4,7 @@ use crate::ports::LogEmitter;
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
 use tokio::time::{interval, Duration};
-use tracing::{error, info, debug};
+use tracing::{debug, error, info};
 
 /// Logları batch (yığın) halinde hedeflere gönderen yönetici.
 pub struct ExportManager {
@@ -35,19 +35,22 @@ impl ExportManager {
 
         let emitters = self.emitters.clone();
         let batch_size = self.batch_size;
-        let flush_secs = self.flush_interval_secs; 
+        let flush_secs = self.flush_interval_secs;
         let mut flush_ticker = interval(Duration::from_secs(flush_secs));
-        
+
         let buffer = Arc::new(Mutex::new(Vec::with_capacity(batch_size)));
 
         tokio::spawn(async move {
-            info!("📦 Export Worker Active. Batch: {}, Flush: {}s", batch_size, flush_secs);
+            info!(
+                "📦 Export Worker Active. Batch: {}, Flush: {}s",
+                batch_size, flush_secs
+            );
             loop {
                 tokio::select! {
                     Some(log) = rx.recv() => {
                         let mut buf = buffer.lock().await;
                         buf.push(log);
-                        
+
                         if buf.len() >= batch_size {
                             let batch_to_send = buf.clone();
                             buf.clear();
@@ -72,7 +75,7 @@ impl ExportManager {
         for emitter in emitters {
             let emitter_clone = emitter.clone();
             let batch_clone = batch.clone();
-            
+
             tokio::spawn(async move {
                 if let Err(e) = emitter_clone.emit_batch(batch_clone).await {
                     error!("❌ Export failed for [{}]: {}", emitter_clone.name(), e);
