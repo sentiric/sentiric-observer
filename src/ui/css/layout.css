@@ -97,12 +97,12 @@ h1, h2, h3 { margin: 0; }
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    display: block;
+    display: inline-flex;
 }
 
 .message-cell { display: flex; align-items: center; justify-content: space-between; overflow: hidden; gap: 10px; width: 100%; }
 .message-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #999; flex: 1; }
-.tags-container { display: flex; gap: 4px; flex-shrink: 0; }
+.tags-container { display: inline-flex; gap: 4px; flex-shrink: 0; }
 
 /* PANES */
 #trace-locator { background: var(--bg-panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; z-index: 50; overflow: hidden; }
