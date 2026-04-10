@@ -141,7 +141,7 @@ impl DockerIngestor {
                             ts
                         },
                         severity,
-                        tenant_id: self.tenant_id.clone(), //[ARCH-COMPLIANCE] Dinamik tenant enjeksiyonu
+                        tenant_id: self.tenant_id.clone(),
                         resource,
                         trace_id,
                         span_id: None,
@@ -159,15 +159,17 @@ impl DockerIngestor {
             Err(_) => {}
         }
 
+        // [ARCH-COMPLIANCE FIX]: SUTS Formatında Olmayan Altyapı Loglarının Susturulması
+        // stdout -> DEBUG (Gürültü önleme), stderr -> WARN (Error yerine Warn yapıyoruz ki kırmızılar patlamasın)
         let mut raw_record = LogRecord {
             schema_v: "1.0.0".to_string(),
             ts: chrono::Utc::now().to_rfc3339(),
             severity: if stream_type == "stderr" {
-                "ERROR".to_string()
+                "WARN".to_string()
             } else {
-                "INFO".to_string()
+                "DEBUG".to_string()
             },
-            tenant_id: self.tenant_id.clone(), // [ARCH-COMPLIANCE] Dinamik tenant enjeksiyonu
+            tenant_id: self.tenant_id.clone(),
             resource: ResourceContext {
                 service_name: container_name.to_string(),
                 service_version: "unknown".to_string(),
@@ -176,10 +178,10 @@ impl DockerIngestor {
             },
             trace_id: None,
             span_id: None,
-            event: "RAW_LOG_OUTPUT".to_string(),
+            event: "RAW_INFRA_LOG".to_string(),
             message: cleaned_line,
             attributes: HashMap::new(),
-            smart_tags: vec!["RAW".to_string()],
+            smart_tags: vec!["RAW".to_string(), "INFRA_RAW".to_string()],
             _idx: 0.0,
         };
         raw_record.sanitize_and_enrich();
