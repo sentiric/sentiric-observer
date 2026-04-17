@@ -13,7 +13,8 @@ export class ToolbarComponent {
             btnExportMain: document.querySelector('.dropdown > .t-btn.primary'),
             dropdownContent: document.querySelector('.dropdown-content'),
             btnExpRaw: document.getElementById('btn-export-raw'),
-            btnExpAi: document.getElementById('btn-export-ai')
+            btnExpAi: document.getElementById('btn-export-ai'),
+            selService: document.getElementById('filter-service') // [YENİ]
         };
 
         // [ARCH-COMPLIANCE] Sentiric Mimari Katmanları
@@ -24,9 +25,27 @@ export class ToolbarComponent {
         };
 
         this.bindEvents();
+
+        // [YENİ] Store'dan gelen knownServices'i dropdown'a bas
+        Store.subscribe((state) => {
+            if (this.el.selService && state.knownServices.size > this.el.selService.options.length - 1) {
+                const currentVal = this.el.selService.value;
+                let html = '<option value="ALL">ALL SERVICES</option>';
+                Array.from(state.knownServices).sort().forEach(svc => {
+                    html += `<option value="${svc}">${svc}</option>`;
+                });
+                this.el.selService.innerHTML = html;
+                this.el.selService.value = currentVal;
+            }
+        });        
     }
 
     bindEvents() {
+        // [YENİ] Dropdown değişimini Store'a bildir
+        this.el.selService?.addEventListener('change', (e) => {
+            Store.dispatch('SET_SERVICE_FILTER', e.target.value);
+        });
+                
         this.el.inpSearch?.addEventListener('input', (e) => Store.dispatch('SET_SEARCH', e.target.value));
 
         this.el.levelCheckboxes = document.querySelectorAll('.lvl-chk');

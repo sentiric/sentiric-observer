@@ -100,7 +100,7 @@ impl NetworkSniffer {
         }
         if payload.len() > 12 && (payload[0] & 0xC0) == 0x80 {
             let pt = payload[1] & 0x7F;
-            if pt == 0 || pt == 8 || pt == 18 || pt == 101 || (pt >= 96 && pt <= 127) {
+            if pt == 0 || pt == 8 || pt == 18 || pt == 101 || (96..=127).contains(&pt) {
                 return self.create_rtp_log(pt, original_len, payload);
             }
         }

@@ -6,6 +6,7 @@ export const Store = {
         rawLogs: [],         
         filteredLogs:[],    
         activeTraces: new Map(), 
+        knownServices: new Set(), // [YENİ] Dinamik servis listesi        
         
         status: {
             pps: 0,
@@ -18,6 +19,7 @@ export const Store = {
             selectedLogIdx: null, 
             hideRtpNoise: true,
             globalSearch: "",
+            serviceFilter: "ALL", // [YENİ]
             levelFilters: ["INFO", "WARN", "ERROR", "FATAL"],
             forceRender: false,
             dirtyLogs: new Set() // [YENİ] Sadece güncellenecek DOM elementlerinin ID'leri
@@ -40,6 +42,14 @@ export const Store = {
                 
                 const logs = payload;
                 logs.forEach(log => {
+                    
+                    // [YENİ] Gelen logun servisini Set'e ekle
+                    const svcName = log.resource?.['service.name'];
+                    if (svcName && !this.state.knownServices.has(svcName)) {
+                        this.state.knownServices.add(svcName);
+                        shouldRender = true; // Dropdown'u güncellemek için tetikle
+                    }
+
                     if (log.span_id && (log.event.includes('STREAM') || log.event.includes('CHUNK') || log.event.includes('TOKEN'))) {
                         const existingLog = this.state.rawLogs.find(l => l.span_id === log.span_id && l.event === log.event);
                         if (existingLog) {
@@ -124,6 +134,12 @@ export const Store = {
                 this.state.controls.forceRender = true;
                 shouldRender = this.applyFilters();
                 break;
+
+            case 'SET_SERVICE_FILTER':
+                this.state.controls.serviceFilter = payload;
+                this.state.controls.forceRender = true;
+                shouldRender = this.applyFilters();
+                break;
         }
 
         if (shouldRender) this.notify();
@@ -164,11 +180,15 @@ export const Store = {
         }
 
         this.state.rawLogs.sort((a, b) => a._idx - b._idx);
-        const { globalSearch, hideRtpNoise, lockedTraceId, levelFilters } = this.state.controls;
+        const { globalSearch, hideRtpNoise, lockedTraceId, levelFilters, serviceFilter } = this.state.controls;
         
         this.state.filteredLogs = this.state.rawLogs.filter(log => {
             const tid = log.trace_id || log.attributes?.['sip.call_id'];
             if (lockedTraceId && tid !== lockedTraceId) return false;
+            
+            // [YENİ] Servis Filtresi
+            if (serviceFilter !== "ALL" && log.resource?.['service.name'] !== serviceFilter) return false;
+
             if (!lockedTraceId && hideRtpNoise) {
                 if (log.event === "RTP_PACKET") return false;
             }

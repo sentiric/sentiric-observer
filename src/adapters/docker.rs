@@ -44,119 +44,116 @@ impl DockerIngestor {
     fn process_line(&self, line: String, container_name: &str, stream_type: &str) -> LogRecord {
         let cleaned_line = parser::clean_ansi(&line);
 
-        match serde_json::from_str::<Value>(&cleaned_line) {
-            Ok(json_val) => {
-                if let Some(map) = json_val.as_object() {
-                    let schema = map
-                        .get("schema_v")
-                        .and_then(Value::as_str)
-                        .unwrap_or("1.0.0");
-                    let severity = map
-                        .get("severity")
-                        .or_else(|| map.get("level"))
-                        .and_then(Value::as_str)
-                        .unwrap_or(if stream_type == "stderr" {
-                            "ERROR"
-                        } else {
-                            "INFO"
-                        })
-                        .to_uppercase();
+        if let Ok(json_val) = serde_json::from_str::<Value>(&cleaned_line) {
+            if let Some(map) = json_val.as_object() {
+                let schema = map
+                    .get("schema_v")
+                    .and_then(Value::as_str)
+                    .unwrap_or("1.0.0");
+                let severity = map
+                    .get("severity")
+                    .or_else(|| map.get("level"))
+                    .and_then(Value::as_str)
+                    .unwrap_or(if stream_type == "stderr" {
+                        "ERROR"
+                    } else {
+                        "INFO"
+                    })
+                    .to_uppercase();
 
-                    let msg = map
-                        .get("message")
-                        .or_else(|| map.get("msg"))
-                        .and_then(Value::as_str)
-                        .unwrap_or(&cleaned_line)
-                        .to_string();
+                let msg = map
+                    .get("message")
+                    .or_else(|| map.get("msg"))
+                    .and_then(Value::as_str)
+                    .unwrap_or(&cleaned_line)
+                    .to_string();
 
-                    let ts = map
-                        .get("ts")
-                        .or_else(|| map.get("time"))
-                        .or_else(|| map.get("timestamp"))
-                        .and_then(Value::as_str)
-                        .unwrap_or("")
-                        .to_string();
+                let ts = map
+                    .get("ts")
+                    .or_else(|| map.get("time"))
+                    .or_else(|| map.get("timestamp"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
 
-                    let trace_id = map
-                        .get("trace_id")
-                        .and_then(Value::as_str)
-                        .map(|s| s.to_string());
-                    let event = map
-                        .get("event")
-                        .and_then(Value::as_str)
-                        .unwrap_or("LOG_EVENT")
-                        .to_string();
+                let trace_id = map
+                    .get("trace_id")
+                    .and_then(Value::as_str)
+                    .map(|s| s.to_string());
+                let event = map
+                    .get("event")
+                    .and_then(Value::as_str)
+                    .unwrap_or("LOG_EVENT")
+                    .to_string();
 
-                    let mut attributes = HashMap::new();
-                    if let Some(attrs) = map.get("attributes").and_then(Value::as_object) {
-                        for (k, v) in attrs {
+                let mut attributes = HashMap::new();
+                if let Some(attrs) = map.get("attributes").and_then(Value::as_object) {
+                    for (k, v) in attrs {
+                        attributes.insert(k.clone(), v.clone());
+                    }
+                } else {
+                    for (k, v) in map {
+                        if ![
+                            "schema_v", "severity", "level", "message", "msg", "ts", "time",
+                            "trace_id", "event", "resource",
+                        ]
+                        .contains(&k.as_str())
+                        {
                             attributes.insert(k.clone(), v.clone());
                         }
-                    } else {
-                        for (k, v) in map {
-                            if ![
-                                "schema_v", "severity", "level", "message", "msg", "ts", "time",
-                                "trace_id", "event", "resource",
-                            ]
-                            .contains(&k.as_str())
-                            {
-                                attributes.insert(k.clone(), v.clone());
-                            }
-                        }
                     }
-
-                    let resource = if let Some(r) = map.get("resource").and_then(Value::as_object) {
-                        ResourceContext {
-                            service_name: r
-                                .get("service.name")
-                                .and_then(Value::as_str)
-                                .unwrap_or(container_name)
-                                .to_string(),
-                            service_version: r
-                                .get("service.version")
-                                .and_then(Value::as_str)
-                                .unwrap_or("unknown")
-                                .to_string(),
-                            service_env: r
-                                .get("service.env")
-                                .and_then(Value::as_str)
-                                .unwrap_or("production")
-                                .to_string(),
-                            host_name: Some(self.node_name.clone()),
-                        }
-                    } else {
-                        ResourceContext {
-                            service_name: container_name.to_string(),
-                            service_version: "unknown".to_string(),
-                            service_env: "production".to_string(),
-                            host_name: Some(self.node_name.clone()),
-                        }
-                    };
-
-                    let mut record = LogRecord {
-                        schema_v: schema.to_string(),
-                        ts: if ts.is_empty() {
-                            chrono::Utc::now().to_rfc3339()
-                        } else {
-                            ts
-                        },
-                        severity,
-                        tenant_id: self.tenant_id.clone(),
-                        resource,
-                        trace_id,
-                        span_id: None,
-                        event,
-                        message: msg,
-                        attributes,
-                        smart_tags: vec![],
-                        _idx: 0.0,
-                    };
-
-                    record.sanitize_and_enrich();
-                    return record;
                 }
+
+                let resource = if let Some(r) = map.get("resource").and_then(Value::as_object) {
+                    ResourceContext {
+                        service_name: r
+                            .get("service.name")
+                            .and_then(Value::as_str)
+                            .unwrap_or(container_name)
+                            .to_string(),
+                        service_version: r
+                            .get("service.version")
+                            .and_then(Value::as_str)
+                            .unwrap_or("unknown")
+                            .to_string(),
+                        service_env: r
+                            .get("service.env")
+                            .and_then(Value::as_str)
+                            .unwrap_or("production")
+                            .to_string(),
+                        host_name: Some(self.node_name.clone()),
+                    }
+                } else {
+                    ResourceContext {
+                        service_name: container_name.to_string(),
+                        service_version: "unknown".to_string(),
+                        service_env: "production".to_string(),
+                        host_name: Some(self.node_name.clone()),
+                    }
+                };
+
+                let mut record = LogRecord {
+                    schema_v: schema.to_string(),
+                    ts: if ts.is_empty() {
+                        chrono::Utc::now().to_rfc3339()
+                    } else {
+                        ts
+                    },
+                    severity,
+                    tenant_id: self.tenant_id.clone(),
+                    resource,
+                    trace_id,
+                    span_id: None,
+                    event,
+                    message: msg,
+                    attributes,
+                    smart_tags: vec![],
+                    _idx: 0.0,
+                };
+
+                record.sanitize_and_enrich();
+                return record;
             }
-            Err(_) => {}
         }
 
         // [ARCH-COMPLIANCE FIX]: SUTS Formatında Olmayan Altyapı Loglarının Susturulması
@@ -239,7 +236,7 @@ impl LogIngestor for DockerIngestor {
                                     follow: true,
                                     stdout: true,
                                     stderr: true,
-                                    since: since,
+                                    since,
                                     timestamps: false,
                                     ..Default::default()
                                 };
@@ -275,7 +272,7 @@ impl LogIngestor for DockerIngestor {
                                                     stream_type,
                                                 );
 
-                                                if let Err(_) = tx.send(record).await {
+                                                if tx.send(record).await.is_err() {
                                                     break;
                                                 }
                                             }
